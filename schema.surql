@@ -6,7 +6,12 @@
 -- ============================================================
 
 -- user table
-DEFINE TABLE user SCHEMAFULL;
+DEFINE TABLE user SCHEMAFULL
+    PERMISSIONS
+        FOR select FULL
+        FOR create NONE
+        FOR update WHERE id = $auth.id
+        FOR delete WHERE id = $auth.id;
 
 DEFINE FIELD username ON user TYPE string;
 DEFINE FIELD email ON user TYPE string ASSERT string::is_email($value);
@@ -16,14 +21,6 @@ DEFINE FIELD created_at ON user TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX unique_username ON user FIELDS username UNIQUE;
 DEFINE INDEX unique_email ON user FIELDS email UNIQUE;
-
--- user permissions: users can read any profile, but only update/delete their own
-DEFINE TABLE user SCHEMAFULL
-    PERMISSIONS
-        FOR select FULL
-        FOR create NONE
-        FOR update WHERE id = $auth.id
-        FOR delete WHERE id = $auth.id;
 
 -- post table
 DEFINE TABLE post SCHEMAFULL
@@ -127,7 +124,7 @@ DEFINE INDEX post_body ON post
     FIELDS body FULLTEXT ANALYZER plntxt_search BM25 HIGHLIGHTS;
 
 -- ============================================================
--- FILE STORAGE (experimental)
+-- FILE STORAGE (experimental, requires --allow-experimental files)
 -- ============================================================
 
 DEFINE BUCKET uploads BACKEND "file:/data/uploads";

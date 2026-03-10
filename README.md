@@ -32,11 +32,11 @@ Default admin: `admin` / `changeme`
 
 ```bash
 # start surrealdb
-surreal start --user root --pass changeme --allow-experimental files file:data/db.surql
+surreal start --user root --pass changeme surrealkv:data/db
 
 # import schema + seed data
-surreal import --conn http://localhost:8000 --user root --pass changeme --ns plntxt --db plntxt schema.surql
-surreal import --conn http://localhost:8000 --user root --pass changeme --ns plntxt --db plntxt init.surql
+surreal import --endpoint http://localhost:8000 --user root --pass changeme --ns plntxt --db plntxt schema.surql
+surreal import --endpoint http://localhost:8000 --user root --pass changeme --ns plntxt --db plntxt init.surql
 
 # serve static files (dev)
 cd public && python3 -m http.server 8080
