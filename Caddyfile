@@ -6,8 +6,8 @@
     @auth path /signup /signin
     # rate_limit @auth {remote.ip} 5r/m
 
-    # rate limit API/WebSocket
-    @api path /rpc/*
+    # rate limit API
+    @api path /sql /rpc
     # rate_limit @api {remote.ip} 30r/s
 
     # NOTE: rate_limit directives commented out — requires caddy-ratelimit plugin.
@@ -15,5 +15,6 @@
 
     reverse_proxy /signup db:8000
     reverse_proxy /signin db:8000
-    reverse_proxy /rpc/* db:8000
+    reverse_proxy /sql db:8000
+    reverse_proxy /rpc db:8000
 }

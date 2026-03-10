@@ -1,7 +1,7 @@
 services:
   db:
     image: surrealdb/surrealdb:latest
-    command: start --user root --pass changeme --bind 0.0.0.0:8000 --allow-experimental=files surrealkv:/data/db
+    command: start --user root --pass changeme --bind 0.0.0.0:8000 --allow-experimental=files --allow-guests surrealkv:/data/db
     environment:
       SURREAL_BUCKET_FOLDER_ALLOWLIST: "/data/uploads"
     expose:

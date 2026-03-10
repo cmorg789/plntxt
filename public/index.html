@@ -134,7 +134,9 @@ a:hover { text-decoration: underline; }
     font-size: 13px;
     color: var(--text-dim);
     margin-top: 4px;
-    max-height: 2.6em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
 }
 .type-badge {
@@ -383,6 +385,7 @@ select { cursor: pointer; }
 </div>
 
 <!-- markdown-it from CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
 
 <script>
@@ -406,6 +409,7 @@ let state = {
     token: localStorage.getItem('plntxt_token'),
     user: null,
     currentPost: null,
+    postType: null,
     page: 1,
     selectedIndex: -1,
 };
@@ -416,17 +420,29 @@ let state = {
 
 async function dbQuery(sql, vars = {}) {
     const headers = {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Surreal-NS': DB_NS,
         'Surreal-DB': DB_DB,
     };
     if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
 
-    const res = await fetch(`${DB_URL}/rpc/sql`, {
+    // /sql query params only support strings. Pass strings as query params
+    // (safe, parameterized) and inline other types as SurrealQL literals.
+    const url = new URL(`${DB_URL}/sql`);
+    let body = sql;
+    for (const [k, v] of Object.entries(vars)) {
+        if (typeof v === 'string') {
+            url.searchParams.set(k, v);
+        } else {
+            // Inline non-string values as SurrealQL literals
+            body = body.replaceAll('$' + k, toSurql(v));
+        }
+    }
+
+    const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ query: sql, variables: vars }),
+        body,
     });
 
     if (!res.ok) throw new Error(`DB error: ${res.status}`);
@@ -439,6 +455,15 @@ async function dbQuery(sql, vars = {}) {
         return data.map(r => r.result);
     }
     return data;
+}
+
+function toSurql(v) {
+    if (v === null || v === undefined) return 'NONE';
+    if (typeof v === 'boolean') return v ? 'true' : 'false';
+    if (typeof v === 'number') return String(v);
+    if (Array.isArray(v)) return '[' + v.map(toSurql).join(', ') + ']';
+    if (typeof v === 'string') return "'" + v.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+    return JSON.stringify(v);
 }
 
 async function dbQueryOne(sql, vars = {}) {
@@ -515,11 +540,13 @@ function renderAuthControls() {
     const el = document.getElementById('auth-controls');
     if (state.user) {
         el.innerHTML = `
+            <a href="#" onclick="openSearch(); return false" title="Search (/)"><span class="mdi mdi-magnify"></span></a>
             <span class="username">${esc(state.user.username)}</span>
             <a href="#" onclick="signout(); return false">logout</a>
         `;
     } else {
         el.innerHTML = `
+            <a href="#" onclick="openSearch(); return false" title="Search (/)"><span class="mdi mdi-magnify"></span></a>
             <a href="#" onclick="showAuthModal('signin'); return false">login</a>
             <a href="#" onclick="showAuthModal('signup'); return false">signup</a>
         `;
@@ -604,8 +631,58 @@ function navigate(view, data) {
     state.view = view;
     state.selectedIndex = -1;
     if (data) Object.assign(state, data);
+
+    // Build hash from state
+    let hash = '#/' + view;
+    if (view === 'post' && state.currentPost) {
+        const prefix = state.postType || 'post';
+        hash = '#/' + prefix + '/' + state.currentPost;
+    }
+    else if (view === 'edit' && state.editPost) hash = '#/edit/' + state.editPost;
+    else if (view === 'new' && state.newType) hash = '#/new/' + state.newType;
+    else if ((view === 'blog' || view === 'forum' || view === 'wiki') && state.page > 1) hash += '/' + state.page;
+
+    if (location.hash !== hash) history.pushState(null, '', hash);
     render();
 }
+
+function routeFromHash() {
+    const hash = location.hash || '#/home';
+    const parts = hash.replace('#/', '').split('/');
+    const view = parts[0] || 'home';
+
+    switch (view) {
+        case 'post':
+            if (parts[1]) { state.currentPost = parts.slice(1).join('/'); }
+            state.view = 'post';
+            break;
+        case 'edit':
+            if (parts[1]) { state.editPost = parts.slice(1).join('/'); }
+            state.view = 'edit';
+            break;
+        case 'new':
+            state.newType = parts[1] || 'blog';
+            state.view = 'new';
+            break;
+        case 'blog': case 'forum': case 'wiki':
+            // If second part contains ":" it's a record ID (e.g. post:abc), not a page number
+            if (parts[1] && parts[1].includes(':')) {
+                state.currentPost = parts.slice(1).join('/');
+                state.postType = view;
+                state.view = 'post';
+            } else {
+                state.page = parseInt(parts[1]) || 1;
+                state.view = view;
+            }
+            break;
+        default:
+            state.view = view;
+    }
+    state.selectedIndex = -1;
+    render();
+}
+
+window.addEventListener('popstate', routeFromHash);
 
 async function render() {
     const main = document.getElementById('main');
@@ -674,8 +751,8 @@ async function renderHome(el) {
 function renderPostItems(posts) {
     if (!posts.length) return '<div style="color: var(--text-dim)">no posts yet</div>';
     return posts.map((p, i) => `
-        <div class="post-item" data-index="${i}" data-id="${p.id}">
-            <a class="post-title" onclick="viewPost('${p.id}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
+        <div class="post-item" data-index="${i}" data-id="${p.id}" data-type="${p.type || ''}">
+            <a class="post-title" onclick="viewPost('${p.id}', '${p.type || ''}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
             <div class="post-meta">
                 <span class="author">${esc(p.author || 'anonymous')}</span>
                 &middot; ${timeAgo(p.created_at || p.updated_at)}
@@ -688,8 +765,8 @@ function renderPostItems(posts) {
 function renderForumItems(posts) {
     if (!posts.length) return '<div style="color: var(--text-dim)">no threads yet</div>';
     return posts.map((p, i) => `
-        <div class="post-item" data-index="${i}" data-id="${p.id}">
-            <a class="post-title" onclick="viewPost('${p.id}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
+        <div class="post-item" data-index="${i}" data-id="${p.id}" data-type="forum">
+            <a class="post-title" onclick="viewPost('${p.id}', 'forum'); return false" href="#">${esc(p.title || 'Untitled')}</a>
             <div class="post-meta">
                 <span class="author">${esc(p.author || 'anonymous')}</span>
                 &middot; ${timeAgo(p.created_at)}
@@ -742,14 +819,14 @@ async function renderList(el, type) {
 function renderListItems(posts, type) {
     if (!posts.length) return '<div style="color: var(--text-dim)">nothing here yet</div>';
     return posts.map((p, i) => `
-        <div class="post-item" data-index="${i}" data-id="${p.id}">
-            <a class="post-title" onclick="viewPost('${p.id}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
+        <div class="post-item" data-index="${i}" data-id="${p.id}" data-type="${type}">
+            <a class="post-title" onclick="viewPost('${p.id}', '${type}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
             <div class="post-meta">
                 <span class="author">${esc(p.author || 'anonymous')}</span>
                 &middot; ${timeAgo(p.created_at || p.updated_at)}
                 ${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
             </div>
-            ${type === 'blog' ? `<div class="post-excerpt">${esc((p.body || '').substring(0, 200))}</div>` : ''}
+            ${type === 'blog' ? `<div class="post-excerpt">${esc(truncateAtWord(p.body || '', 250))}</div>` : ''}
         </div>
     `).join('');
 }
@@ -768,10 +845,10 @@ function renderPagination(current, total, type) {
 }
 
 // ── post view ──
-async function viewPost(id) {
+function viewPost(id, type) {
     state.currentPost = id;
-    state.view = 'post';
-    render();
+    if (type) state.postType = type;
+    navigate('post');
 }
 
 async function renderPost(el) {
@@ -781,6 +858,13 @@ async function renderPost(el) {
     `);
     if (!post) { el.innerHTML = '<p>Post not found</p>'; return; }
 
+    // Store post type for URL routing
+    if (post.type && state.postType !== post.type) {
+        state.postType = post.type;
+        const hash = '#/' + post.type + '/' + state.currentPost;
+        if (location.hash !== hash) history.replaceState(null, '', hash);
+    }
+
     const isWiki = post.type === 'wiki';
     const isAuthor = state.user && post.author_id === state.user.id;
     const canEdit = isAuthor || isWiki || state.user?.role === 'admin';
@@ -788,13 +872,13 @@ async function renderPost(el) {
     // get replies (for blog comments and forum threads)
     const [replies] = await dbQuery(`
         SELECT *, author.username AS author_name
-        FROM post WHERE parent = $parent ORDER BY created_at ASC;
-    `, { parent: state.currentPost });
+        FROM post WHERE parent = ${state.currentPost} ORDER BY created_at ASC;
+    `);
 
     // wiki revision count
     let revCount = 0;
     if (isWiki) {
-        const [rc] = await dbQuery(`SELECT count() FROM revision WHERE post = $post GROUP ALL;`, { post: state.currentPost });
+        const [rc] = await dbQuery(`SELECT count() FROM revision WHERE post = ${state.currentPost} GROUP ALL;`);
         revCount = rc?.[0]?.count || 0;
     }
 
@@ -856,13 +940,13 @@ async function submitReply(parentId, type) {
     await dbQuery(`
         CREATE post CONTENT {
             type: $type,
-            parent: $parent,
+            parent: ${parentId},
             body: $body,
             published: true
         };
-    `, { type, parent: parentId, body });
+    `, { type, body });
 
-    viewPost(parentId);
+    viewPost(parentId, type);
 }
 
 async function deletePost(id) {
@@ -876,15 +960,15 @@ async function viewRevisions(postId) {
     const main = document.getElementById('main');
     const [revisions] = await dbQuery(`
         SELECT *, author.username AS author_name
-        FROM revision WHERE post = $post
+        FROM revision WHERE post = ${postId}
         ORDER BY created_at DESC;
-    `, { post: postId });
+    `);
 
     main.innerHTML = `
         <div class="panel">
             <div class="panel-header" style="color: var(--green)">
                 revision history
-                <button class="btn" onclick="viewPost('${postId}')">back to page</button>
+                <button class="btn" onclick="viewPost('${postId}', '${state.postType || ''}')">back to page</button>
             </div>
             <div class="panel-body">
                 ${(revisions || []).map((r, i) => `
@@ -978,7 +1062,7 @@ async function submitNewPost() {
         `, { type, title, slug: slug || slugify(title), body, tags });
 
         const newPost = Array.isArray(result) ? result[0] : result;
-        viewPost(newPost.id);
+        viewPost(newPost.id, type);
     } catch (e) {
         msgEl.innerHTML = `<div class="msg msg-error">${esc(e.message)}</div>`;
     }
@@ -1018,7 +1102,7 @@ async function renderEditForm(el) {
                 </div>
                 <div class="btn-group">
                     <button class="btn btn-primary" onclick="submitEdit('${state.editPost}', '${post.type}')">save</button>
-                    <button class="btn" onclick="viewPost('${state.editPost}')">cancel</button>
+                    <button class="btn" onclick="viewPost('${state.editPost}', '${post.type}')">cancel</button>
                 </div>
             </div>
         </div>
@@ -1049,11 +1133,11 @@ async function submitEdit(id, type) {
             // Create revision before updating
             await dbQuery(`
                 CREATE revision CONTENT {
-                    post: $post,
-                    body: (SELECT body FROM $post).body,
+                    post: ${id},
+                    body: (SELECT body FROM ${id}).body,
                     author: $auth.id
                 };
-            `, { post: id });
+            `);
         }
 
         await dbQuery(`
@@ -1064,7 +1148,7 @@ async function submitEdit(id, type) {
                 tags = $tags;
         `, { title, slug, body, tags });
 
-        viewPost(id);
+        viewPost(id, type);
     } catch (e) {
         msgEl.innerHTML = `<div class="msg msg-error">${esc(e.message)}</div>`;
     }
@@ -1104,7 +1188,7 @@ async function executeSearch(query) {
         }
 
         el.innerHTML = results.map(r => `
-            <div class="post-item" style="padding: 8px 12px; cursor: pointer" onclick="closeSearch(); viewPost('${r.id}')">
+            <div class="post-item" style="padding: 8px 12px; cursor: pointer" onclick="closeSearch(); viewPost('${r.id}', '${r.type}')">
                 <span class="type-badge ${r.type}">${r.type}</span>
                 <span style="color: var(--text-bright)">${esc(r.title || 'Untitled')}</span>
                 ${r.snippet ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px">${r.snippet}</div>` : ''}
@@ -1133,7 +1217,7 @@ function closeSearch() {
 
 let ws;
 function connectPresence() {
-    const wsUrl = location.origin.replace(/^http/, 'ws') + '/rpc/ws';
+    const wsUrl = location.origin.replace(/^http/, 'ws') + '/rpc';
     try {
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
@@ -1205,8 +1289,9 @@ function selectNext(dir) {
 function openSelected() {
     const items = document.querySelectorAll('#post-list .post-item, .panel-body .post-item');
     if (state.selectedIndex >= 0 && state.selectedIndex < items.length) {
-        const id = items[state.selectedIndex].dataset.id;
-        if (id) viewPost(id);
+        const el = items[state.selectedIndex];
+        const id = el.dataset.id;
+        if (id) viewPost(id, el.dataset.type || '');
     }
 }
 
@@ -1226,6 +1311,13 @@ function escAttr(s) {
 
 function slugify(s) {
     return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function truncateAtWord(str, max) {
+    if (str.length <= max) return str;
+    const trimmed = str.substring(0, max);
+    const lastSpace = trimmed.lastIndexOf(' ');
+    return (lastSpace > 0 ? trimmed.substring(0, lastSpace) : trimmed) + '…';
 }
 
 function timeAgo(dateStr) {
@@ -1248,7 +1340,7 @@ function timeAgo(dateStr) {
 (async function init() {
     await loadUser();
     renderAuthControls();
-    navigate('home');
+    routeFromHash();
     connectPresence();
 })();
 </script>
