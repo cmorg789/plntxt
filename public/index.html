@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>plntxt</title>
+<style>
+:root {
+    --bg: #0e0e16;
+    --bg-panel: #14141e;
+    --bg-input: #1a1a28;
+    --border: #2a2a3a;
+    --text: #c6c6d0;
+    --text-dim: #6e6e82;
+    --text-bright: #e8e8f0;
+    --purple: #c4a7e7;
+    --blue: #7aa2f7;
+    --green: #9ece6a;
+    --aqua: #7dcfff;
+    --red: #f7768e;
+    --yellow: #e0af68;
+    --font: 'Courier New', Courier, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* scanline overlay */
+body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.03) 2px,
+        rgba(0, 0, 0, 0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+}
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── header ── */
+#header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+#header .logo {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--text-bright);
+    cursor: pointer;
+}
+#header .logo span { color: var(--red); }
+#header nav { display: flex; gap: 16px; align-items: center; }
+#header nav a { color: var(--text-dim); font-size: 13px; }
+#header nav a:hover, #header nav a.active { color: var(--text-bright); }
+.nav-blog { color: var(--purple) !important; }
+.nav-forum { color: var(--blue) !important; }
+.nav-wiki { color: var(--green) !important; }
+#auth-controls { display: flex; gap: 12px; align-items: center; font-size: 13px; }
+#auth-controls .username { color: var(--aqua); }
+
+/* ── panels (box drawing) ── */
+.panel {
+    border: 1px solid var(--border);
+    margin: 8px;
+    position: relative;
+}
+.panel-header {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.panel-body { padding: 16px; }
+
+/* ── main content ── */
+#main {
+    flex: 1;
+    max-width: 1000px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 8px;
+}
+
+/* ── home layout ── */
+.home-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+}
+.home-full { grid-column: 1 / -1; }
+
+/* ── post list items ── */
+.post-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+.post-item:last-child { border-bottom: none; }
+.post-item .post-title {
+    color: var(--text-bright);
+    cursor: pointer;
+    font-size: 14px;
+}
+.post-item .post-title:hover { text-decoration: underline; }
+.post-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+}
+.post-meta .author { color: var(--aqua); }
+.post-excerpt {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    max-height: 2.6em;
+    overflow: hidden;
+}
+.type-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 6px;
+    border: 1px solid;
+    margin-right: 6px;
+}
+.type-badge.blog { color: var(--purple); border-color: var(--purple); }
+.type-badge.forum { color: var(--blue); border-color: var(--blue); }
+.type-badge.wiki { color: var(--green); border-color: var(--green); }
+
+/* ── post view ── */
+.post-view { padding: 16px 0; }
+.post-view h1 { color: var(--text-bright); margin-bottom: 8px; font-size: 20px; }
+.post-view .post-body {
+    line-height: 1.8;
+    color: var(--text);
+}
+.post-view .post-body h1, .post-view .post-body h2, .post-view .post-body h3 {
+    color: var(--text-bright);
+    margin: 16px 0 8px;
+}
+.post-view .post-body code {
+    background: var(--bg-input);
+    padding: 2px 6px;
+    font-size: 13px;
+}
+.post-view .post-body pre {
+    background: var(--bg-input);
+    padding: 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+.post-view .post-body pre code { padding: 0; background: none; }
+.post-view .post-body strong { color: var(--text-bright); }
+.post-view .post-body ul, .post-view .post-body ol { padding-left: 24px; margin: 8px 0; }
+.post-view .post-body blockquote {
+    border-left: 3px solid var(--border);
+    padding-left: 12px;
+    color: var(--text-dim);
+    margin: 8px 0;
+}
+
+/* ── replies ── */
+.replies { margin-top: 24px; }
+.replies h3 { color: var(--text-dim); margin-bottom: 8px; font-size: 14px; }
+.reply-item {
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+}
+
+/* ── forms ── */
+.form-group { margin-bottom: 12px; }
+.form-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+}
+input[type="text"], input[type="email"], input[type="password"], select, textarea {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    padding: 8px 12px;
+    outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--blue); }
+textarea { min-height: 200px; resize: vertical; }
+select { cursor: pointer; }
+
+.btn {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 6px 16px;
+    cursor: pointer;
+}
+.btn:hover { border-color: var(--text-dim); color: var(--text-bright); }
+.btn-primary { border-color: var(--blue); color: var(--blue); }
+.btn-primary:hover { background: var(--blue); color: var(--bg); }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: var(--red); color: var(--bg); }
+.btn-group { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ── search overlay ── */
+#search-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(14, 14, 22, 0.9);
+    z-index: 100;
+    justify-content: center;
+    padding-top: 100px;
+}
+#search-overlay.open { display: flex; }
+#search-box {
+    width: 600px;
+    max-width: 90vw;
+}
+#search-box input {
+    font-size: 18px;
+    padding: 12px 16px;
+    border-color: var(--blue);
+}
+#search-results {
+    margin-top: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* ── auth modal ── */
+#auth-modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(14, 14, 22, 0.9);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+}
+#auth-modal.open { display: flex; }
+#auth-form-container {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    padding: 24px;
+    width: 360px;
+    max-width: 90vw;
+}
+
+/* ── status bar ── */
+#statusbar {
+    border-top: 1px solid var(--border);
+    padding: 4px 20px;
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+}
+.key-hint { margin-right: 16px; }
+.key-hint kbd {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    padding: 0 4px;
+    font-size: 11px;
+    font-family: var(--font);
+}
+
+/* ── pagination ── */
+.pagination {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 13px;
+}
+.pagination a, .pagination span {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+}
+.pagination .current { border-color: var(--blue); color: var(--blue); }
+
+/* ── tags ── */
+.tag {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--yellow);
+    border: 1px solid var(--yellow);
+    padding: 0 5px;
+    margin-right: 4px;
+}
+
+/* ── revisions bar ── */
+.revision-bar {
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* ── error/info messages ── */
+.msg { padding: 8px 12px; margin-bottom: 12px; border: 1px solid; font-size: 13px; }
+.msg-error { color: var(--red); border-color: var(--red); }
+.msg-info { color: var(--blue); border-color: var(--blue); }
+
+/* ── checkbox ── */
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.checkbox-group input[type="checkbox"] { width: auto; }
+</style>
+</head>
+<body>
+
+<!-- header -->
+<div id="header">
+    <div class="logo" onclick="navigate('home')"><span>&gt;</span> plntxt</div>
+    <nav>
+        <a href="#" class="nav-blog" onclick="navigate('blog'); return false">blog</a>
+        <a href="#" class="nav-forum" onclick="navigate('forum'); return false">forum</a>
+        <a href="#" class="nav-wiki" onclick="navigate('wiki'); return false">wiki</a>
+    </nav>
+    <div id="auth-controls"></div>
+</div>
+
+<!-- main content -->
+<div id="main"></div>
+
+<!-- search overlay -->
+<div id="search-overlay">
+    <div id="search-box">
+        <input type="text" id="search-input" placeholder="search all content..." oninput="doSearch(this.value)">
+        <div id="search-results"></div>
+    </div>
+</div>
+
+<!-- auth modal -->
+<div id="auth-modal">
+    <div id="auth-form-container"></div>
+</div>
+
+<!-- status bar -->
+<div id="statusbar">
+    <div>
+        <span class="key-hint"><kbd>/</kbd> search</span>
+        <span class="key-hint"><kbd>n</kbd> new</span>
+        <span class="key-hint"><kbd>j</kbd><kbd>k</kbd> nav</span>
+        <span class="key-hint"><kbd>⏎</kbd> open</span>
+    </div>
+    <div id="status-right">
+        <span id="connection-status">connecting...</span>
+        <span id="online-count"></span>
+    </div>
+</div>
+
+<!-- markdown-it from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════════════
+
+const DB_URL = location.origin;
+const DB_NS = 'plntxt';
+const DB_DB = 'plntxt';
+const PAGE_SIZE = 20;
+
+const md = window.markdownit({ html: false, linkify: true, typographer: true });
+
+// ════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════
+
+let state = {
+    view: 'home',
+    token: localStorage.getItem('plntxt_token'),
+    user: null,
+    currentPost: null,
+    page: 1,
+    selectedIndex: -1,
+};
+
+// ════════════════════════════════════════════════════════════
+// DB HELPERS
+// ════════════════════════════════════════════════════════════
+
+async function dbQuery(sql, vars = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Surreal-NS': DB_NS,
+        'Surreal-DB': DB_DB,
+    };
+    if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+
+    const res = await fetch(`${DB_URL}/rpc/sql`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query: sql, variables: vars }),
+    });
+
+    if (!res.ok) throw new Error(`DB error: ${res.status}`);
+    const data = await res.json();
+
+    // SurrealDB returns array of results, one per statement
+    if (Array.isArray(data)) {
+        const errors = data.filter(r => r.status === 'ERR');
+        if (errors.length) throw new Error(errors[0].result);
+        return data.map(r => r.result);
+    }
+    return data;
+}
+
+async function dbQueryOne(sql, vars = {}) {
+    const results = await dbQuery(sql, vars);
+    const first = Array.isArray(results) ? results[0] : results;
+    return Array.isArray(first) ? first[0] : first;
+}
+
+// ════════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════════
+
+async function signup(username, email, password, remember) {
+    const access = remember ? 'remember' : 'default';
+    const res = await fetch(`${DB_URL}/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            ns: DB_NS, db: DB_DB, ac: access,
+            username, email, password
+        }),
+    });
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || 'Signup failed');
+    }
+    const data = await res.json();
+    state.token = data.token;
+    localStorage.setItem('plntxt_token', state.token);
+    await loadUser();
+}
+
+async function signin(username, password, remember) {
+    const access = remember ? 'remember' : 'default';
+    const res = await fetch(`${DB_URL}/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            ns: DB_NS, db: DB_DB, ac: access,
+            username, password
+        }),
+    });
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || 'Signin failed');
+    }
+    const data = await res.json();
+    state.token = data.token;
+    localStorage.setItem('plntxt_token', state.token);
+    await loadUser();
+}
+
+function signout() {
+    state.token = null;
+    state.user = null;
+    localStorage.removeItem('plntxt_token');
+    renderAuthControls();
+    navigate(state.view);
+}
+
+async function loadUser() {
+    if (!state.token) return;
+    try {
+        state.user = await dbQueryOne('SELECT * FROM $auth');
+    } catch {
+        state.token = null;
+        state.user = null;
+        localStorage.removeItem('plntxt_token');
+    }
+    renderAuthControls();
+}
+
+function renderAuthControls() {
+    const el = document.getElementById('auth-controls');
+    if (state.user) {
+        el.innerHTML = `
+            <span class="username">${esc(state.user.username)}</span>
+            <a href="#" onclick="signout(); return false">logout</a>
+        `;
+    } else {
+        el.innerHTML = `
+            <a href="#" onclick="showAuthModal('signin'); return false">login</a>
+            <a href="#" onclick="showAuthModal('signup'); return false">signup</a>
+        `;
+    }
+}
+
+function showAuthModal(mode) {
+    const container = document.getElementById('auth-form-container');
+    const isSignup = mode === 'signup';
+    container.innerHTML = `
+        <h3 style="color: var(--text-bright); margin-bottom: 16px">${isSignup ? 'Sign Up' : 'Sign In'}</h3>
+        <div id="auth-msg"></div>
+        <div class="form-group">
+            <label>username</label>
+            <input type="text" id="auth-username" autocomplete="username">
+        </div>
+        ${isSignup ? `
+        <div class="form-group">
+            <label>email</label>
+            <input type="email" id="auth-email" autocomplete="email">
+        </div>` : ''}
+        <div class="form-group">
+            <label>password</label>
+            <input type="password" id="auth-password" autocomplete="${isSignup ? 'new-password' : 'current-password'}">
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="auth-remember">
+            <label for="auth-remember" style="margin: 0">remember me (30 days)</label>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="handleAuth('${mode}')">${isSignup ? 'sign up' : 'sign in'}</button>
+            <button class="btn" onclick="closeAuthModal()">cancel</button>
+        </div>
+        <p style="font-size: 12px; color: var(--text-dim); margin-top: 12px">
+            ${isSignup
+                ? 'Already have an account? <a href="#" onclick="showAuthModal(\'signin\'); return false">Sign in</a>'
+                : 'Need an account? <a href="#" onclick="showAuthModal(\'signup\'); return false">Sign up</a>'}
+        </p>
+    `;
+    document.getElementById('auth-modal').classList.add('open');
+    document.getElementById('auth-username').focus();
+}
+
+function closeAuthModal() {
+    document.getElementById('auth-modal').classList.remove('open');
+}
+
+async function handleAuth(mode) {
+    const username = document.getElementById('auth-username').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const remember = document.getElementById('auth-remember').checked;
+    const msgEl = document.getElementById('auth-msg');
+
+    if (!username || !password) {
+        msgEl.innerHTML = '<div class="msg msg-error">All fields required</div>';
+        return;
+    }
+
+    try {
+        if (mode === 'signup') {
+            const email = document.getElementById('auth-email').value.trim();
+            if (!email) {
+                msgEl.innerHTML = '<div class="msg msg-error">Email required</div>';
+                return;
+            }
+            await signup(username, email, password, remember);
+        } else {
+            await signin(username, password, remember);
+        }
+        closeAuthModal();
+        navigate(state.view);
+    } catch (e) {
+        msgEl.innerHTML = `<div class="msg msg-error">${esc(e.message)}</div>`;
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// NAVIGATION / VIEWS
+// ════════════════════════════════════════════════════════════
+
+function navigate(view, data) {
+    state.view = view;
+    state.selectedIndex = -1;
+    if (data) Object.assign(state, data);
+    render();
+}
+
+async function render() {
+    const main = document.getElementById('main');
+    main.innerHTML = '<div style="color: var(--text-dim); padding: 20px">loading...</div>';
+
+    try {
+        switch (state.view) {
+            case 'home': await renderHome(main); break;
+            case 'blog': await renderList(main, 'blog'); break;
+            case 'forum': await renderList(main, 'forum'); break;
+            case 'wiki': await renderList(main, 'wiki'); break;
+            case 'post': await renderPost(main); break;
+            case 'new': renderEditor(main); break;
+            case 'edit': await renderEditForm(main); break;
+            default: main.innerHTML = '<p>Not found</p>';
+        }
+    } catch (e) {
+        main.innerHTML = `<div class="msg msg-error">${esc(e.message)}</div>`;
+    }
+}
+
+// ── home view ──
+async function renderHome(el) {
+    const [blogs, forums, wikis] = await dbQuery(`
+        SELECT id, title, slug, type, author.username AS author, created_at, tags
+        FROM post WHERE type = 'blog' AND published = true AND parent = NONE
+        ORDER BY created_at DESC LIMIT 5;
+
+        SELECT id, title, slug, type, author.username AS author, created_at, tags,
+            (SELECT count() FROM post WHERE parent = $parent.id GROUP ALL).count OR 0 AS reply_count
+        FROM post WHERE type = 'forum' AND published = true AND parent = NONE
+        ORDER BY created_at DESC LIMIT 5;
+
+        SELECT id, title, slug, type, author.username AS author, updated_at, tags
+        FROM post WHERE type = 'wiki' AND published = true AND parent = NONE
+        ORDER BY updated_at DESC LIMIT 5;
+    `);
+
+    el.innerHTML = `
+        <div class="home-columns">
+            <div class="panel">
+                <div class="panel-header" style="color: var(--purple)">
+                    blog
+                    <a href="#" onclick="navigate('blog'); return false" style="font-size: 12px; font-weight: normal">view all</a>
+                </div>
+                <div class="panel-body">${renderPostItems(blogs || [])}</div>
+            </div>
+            <div class="panel">
+                <div class="panel-header" style="color: var(--blue)">
+                    forum
+                    <a href="#" onclick="navigate('forum'); return false" style="font-size: 12px; font-weight: normal">view all</a>
+                </div>
+                <div class="panel-body">${renderForumItems(forums || [])}</div>
+            </div>
+            <div class="panel home-full">
+                <div class="panel-header" style="color: var(--green)">
+                    wiki
+                    <a href="#" onclick="navigate('wiki'); return false" style="font-size: 12px; font-weight: normal">view all</a>
+                </div>
+                <div class="panel-body">${renderPostItems(wikis || [])}</div>
+            </div>
+        </div>
+    `;
+}
+
+function renderPostItems(posts) {
+    if (!posts.length) return '<div style="color: var(--text-dim)">no posts yet</div>';
+    return posts.map((p, i) => `
+        <div class="post-item" data-index="${i}" data-id="${p.id}">
+            <a class="post-title" onclick="viewPost('${p.id}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
+            <div class="post-meta">
+                <span class="author">${esc(p.author || 'anonymous')}</span>
+                &middot; ${timeAgo(p.created_at || p.updated_at)}
+                ${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderForumItems(posts) {
+    if (!posts.length) return '<div style="color: var(--text-dim)">no threads yet</div>';
+    return posts.map((p, i) => `
+        <div class="post-item" data-index="${i}" data-id="${p.id}">
+            <a class="post-title" onclick="viewPost('${p.id}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
+            <div class="post-meta">
+                <span class="author">${esc(p.author || 'anonymous')}</span>
+                &middot; ${timeAgo(p.created_at)}
+                &middot; ${p.reply_count || 0} replies
+                ${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+// ── list view ──
+async function renderList(el, type) {
+    const offset = (state.page - 1) * PAGE_SIZE;
+    const colorVar = type === 'blog' ? '--purple' : type === 'forum' ? '--blue' : '--green';
+
+    let orderField = type === 'wiki' ? 'updated_at' : 'created_at';
+    let extraFields = '';
+    if (type === 'forum') {
+        extraFields = ', (SELECT count() FROM post WHERE parent = $parent.id GROUP ALL).count OR 0 AS reply_count';
+    }
+
+    const [posts] = await dbQuery(`
+        SELECT id, title, slug, type, body, author.username AS author, created_at, updated_at, tags ${extraFields}
+        FROM post
+        WHERE type = $type AND published = true AND parent = NONE
+        ORDER BY ${orderField} DESC
+        LIMIT ${PAGE_SIZE} START ${offset};
+    `, { type });
+
+    const [countResult] = await dbQuery(`
+        SELECT count() FROM post WHERE type = $type AND published = true AND parent = NONE GROUP ALL;
+    `, { type });
+    const total = countResult?.[0]?.count || 0;
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    el.innerHTML = `
+        <div class="panel">
+            <div class="panel-header" style="color: var(${colorVar})">
+                ${type}
+                ${state.user ? `<button class="btn" onclick="navigate('new', {newType:'${type}'})">+ new ${type === 'forum' ? 'thread' : type === 'blog' ? 'post' : 'page'}</button>` : ''}
+            </div>
+            <div class="panel-body" id="post-list">
+                ${type === 'forum' ? renderForumItems(posts || []) : renderListItems(posts || [], type)}
+            </div>
+            ${totalPages > 1 ? renderPagination(state.page, totalPages, type) : ''}
+        </div>
+    `;
+}
+
+function renderListItems(posts, type) {
+    if (!posts.length) return '<div style="color: var(--text-dim)">nothing here yet</div>';
+    return posts.map((p, i) => `
+        <div class="post-item" data-index="${i}" data-id="${p.id}">
+            <a class="post-title" onclick="viewPost('${p.id}'); return false" href="#">${esc(p.title || 'Untitled')}</a>
+            <div class="post-meta">
+                <span class="author">${esc(p.author || 'anonymous')}</span>
+                &middot; ${timeAgo(p.created_at || p.updated_at)}
+                ${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+            </div>
+            ${type === 'blog' ? `<div class="post-excerpt">${esc((p.body || '').substring(0, 200))}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+function renderPagination(current, total, type) {
+    let html = '<div class="pagination">';
+    for (let i = 1; i <= total; i++) {
+        if (i === current) {
+            html += `<span class="current">${i}</span>`;
+        } else {
+            html += `<a href="#" onclick="state.page=${i}; navigate('${type}'); return false">${i}</a>`;
+        }
+    }
+    html += '</div>';
+    return html;
+}
+
+// ── post view ──
+async function viewPost(id) {
+    state.currentPost = id;
+    state.view = 'post';
+    render();
+}
+
+async function renderPost(el) {
+    const post = await dbQueryOne(`
+        SELECT *, author.username AS author_name, author AS author_id
+        FROM ${state.currentPost};
+    `);
+    if (!post) { el.innerHTML = '<p>Post not found</p>'; return; }
+
+    const isWiki = post.type === 'wiki';
+    const isAuthor = state.user && post.author_id === state.user.id;
+    const canEdit = isAuthor || isWiki || state.user?.role === 'admin';
+
+    // get replies (for blog comments and forum threads)
+    const [replies] = await dbQuery(`
+        SELECT *, author.username AS author_name
+        FROM post WHERE parent = $parent ORDER BY created_at ASC;
+    `, { parent: state.currentPost });
+
+    // wiki revision count
+    let revCount = 0;
+    if (isWiki) {
+        const [rc] = await dbQuery(`SELECT count() FROM revision WHERE post = $post GROUP ALL;`, { post: state.currentPost });
+        revCount = rc?.[0]?.count || 0;
+    }
+
+    const colorVar = post.type === 'blog' ? '--purple' : post.type === 'forum' ? '--blue' : '--green';
+
+    el.innerHTML = `
+        <div class="post-view">
+            <div style="margin-bottom: 12px">
+                <span class="type-badge ${post.type}">${post.type}</span>
+                ${(post.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+            </div>
+            ${isWiki ? `
+            <div class="revision-bar">
+                <span>${revCount} revision${revCount !== 1 ? 's' : ''}</span>
+                <a href="#" onclick="viewRevisions('${state.currentPost}'); return false">history</a>
+            </div>` : ''}
+            <h1 style="color: var(${colorVar})">${esc(post.title || 'Untitled')}</h1>
+            <div class="post-meta" style="margin-bottom: 16px">
+                <span class="author">${esc(post.author_name || 'anonymous')}</span>
+                &middot; ${timeAgo(post.created_at)}
+                ${post.updated_at !== post.created_at ? `&middot; edited ${timeAgo(post.updated_at)}` : ''}
+            </div>
+            ${canEdit ? `
+            <div class="btn-group" style="margin-bottom: 16px">
+                <button class="btn" onclick="navigate('edit', {editPost:'${state.currentPost}'})">edit</button>
+                ${isAuthor || state.user?.role === 'admin' ? `<button class="btn btn-danger" onclick="deletePost('${state.currentPost}')">delete</button>` : ''}
+            </div>` : ''}
+            <div class="post-body">${md.render(post.body || '')}</div>
+        </div>
+
+        ${(post.type === 'forum' || post.type === 'blog') ? `
+        <div class="replies">
+            <h3>${(replies || []).length} ${post.type === 'forum' ? 'replies' : 'comments'}</h3>
+            ${(replies || []).map(r => `
+                <div class="reply-item">
+                    <div class="post-meta" style="margin-bottom: 8px">
+                        <span class="author">${esc(r.author_name || 'anonymous')}</span>
+                        &middot; ${timeAgo(r.created_at)}
+                    </div>
+                    <div class="post-body">${md.render(r.body || '')}</div>
+                </div>
+            `).join('')}
+            ${state.user ? `
+            <div style="margin-top: 16px">
+                <h3 style="color: var(--text-dim); margin-bottom: 8px">reply</h3>
+                <textarea id="reply-body" placeholder="Write a reply..." style="min-height: 100px"></textarea>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="submitReply('${state.currentPost}', '${post.type}')">post reply</button>
+                </div>
+            </div>` : '<p style="color: var(--text-dim); margin-top: 16px"><a href="#" onclick="showAuthModal(\'signin\'); return false">Sign in</a> to reply</p>'}
+        </div>` : ''}
+    `;
+}
+
+async function submitReply(parentId, type) {
+    const body = document.getElementById('reply-body').value.trim();
+    if (!body) return;
+
+    await dbQuery(`
+        CREATE post CONTENT {
+            type: $type,
+            parent: $parent,
+            body: $body,
+            published: true
+        };
+    `, { type, parent: parentId, body });
+
+    viewPost(parentId);
+}
+
+async function deletePost(id) {
+    if (!confirm('Delete this post?')) return;
+    await dbQuery(`DELETE ${id};`);
+    navigate(state.view === 'post' ? 'home' : state.view);
+}
+
+// ── wiki revisions ──
+async function viewRevisions(postId) {
+    const main = document.getElementById('main');
+    const [revisions] = await dbQuery(`
+        SELECT *, author.username AS author_name
+        FROM revision WHERE post = $post
+        ORDER BY created_at DESC;
+    `, { post: postId });
+
+    main.innerHTML = `
+        <div class="panel">
+            <div class="panel-header" style="color: var(--green)">
+                revision history
+                <button class="btn" onclick="viewPost('${postId}')">back to page</button>
+            </div>
+            <div class="panel-body">
+                ${(revisions || []).map((r, i) => `
+                    <div class="post-item">
+                        <div class="post-meta">
+                            <span class="author">${esc(r.author_name || 'anonymous')}</span>
+                            &middot; ${timeAgo(r.created_at)}
+                            ${i === 0 ? ' &middot; <strong style="color: var(--green)">current</strong>' : ''}
+                        </div>
+                    </div>
+                `).join('') || '<div style="color: var(--text-dim)">no revisions yet</div>'}
+            </div>
+        </div>
+    `;
+}
+
+// ── editor (new) ──
+function renderEditor(el) {
+    if (!state.user) {
+        el.innerHTML = '<div class="msg msg-error">You must be signed in to create content. <a href="#" onclick="showAuthModal(\'signin\'); return false">Sign in</a></div>';
+        return;
+    }
+
+    const type = state.newType || 'blog';
+    el.innerHTML = `
+        <div class="panel">
+            <div class="panel-header" style="color: var(--text-bright)">new post</div>
+            <div class="panel-body">
+                <div id="editor-msg"></div>
+                <div class="form-group">
+                    <label>type</label>
+                    <select id="editor-type">
+                        <option value="blog" ${type === 'blog' ? 'selected' : ''}>blog</option>
+                        <option value="forum" ${type === 'forum' ? 'selected' : ''}>forum</option>
+                        <option value="wiki" ${type === 'wiki' ? 'selected' : ''}>wiki</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>title</label>
+                    <input type="text" id="editor-title" placeholder="Post title">
+                </div>
+                <div class="form-group">
+                    <label>slug</label>
+                    <input type="text" id="editor-slug" placeholder="url-friendly-slug">
+                </div>
+                <div class="form-group">
+                    <label>tags (comma-separated)</label>
+                    <input type="text" id="editor-tags" placeholder="tag1, tag2">
+                </div>
+                <div class="form-group">
+                    <label>body (markdown)</label>
+                    <textarea id="editor-body" placeholder="Write your content in markdown..."></textarea>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="submitNewPost()">publish</button>
+                    <button class="btn" onclick="navigate('home')">cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // auto-generate slug from title
+    document.getElementById('editor-title').addEventListener('input', e => {
+        document.getElementById('editor-slug').value = slugify(e.target.value);
+    });
+}
+
+async function submitNewPost() {
+    const type = document.getElementById('editor-type').value;
+    const title = document.getElementById('editor-title').value.trim();
+    const slug = document.getElementById('editor-slug').value.trim();
+    const body = document.getElementById('editor-body').value.trim();
+    const tags = document.getElementById('editor-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const msgEl = document.getElementById('editor-msg');
+
+    if (!title || !body) {
+        msgEl.innerHTML = '<div class="msg msg-error">Title and body are required</div>';
+        return;
+    }
+
+    try {
+        const [result] = await dbQuery(`
+            CREATE post CONTENT {
+                type: $type,
+                title: $title,
+                slug: $slug,
+                body: $body,
+                tags: $tags,
+                published: true
+            };
+        `, { type, title, slug: slug || slugify(title), body, tags });
+
+        const newPost = Array.isArray(result) ? result[0] : result;
+        viewPost(newPost.id);
+    } catch (e) {
+        msgEl.innerHTML = `<div class="msg msg-error">${esc(e.message)}</div>`;
+    }
+}
+
+// ── editor (edit existing) ──
+async function renderEditForm(el) {
+    if (!state.user) {
+        el.innerHTML = '<div class="msg msg-error">You must be signed in. <a href="#" onclick="showAuthModal(\'signin\'); return false">Sign in</a></div>';
+        return;
+    }
+
+    const post = await dbQueryOne(`SELECT * FROM ${state.editPost};`);
+    if (!post) { el.innerHTML = '<p>Post not found</p>'; return; }
+
+    el.innerHTML = `
+        <div class="panel">
+            <div class="panel-header" style="color: var(--text-bright)">edit post</div>
+            <div class="panel-body">
+                <div id="editor-msg"></div>
+                <input type="hidden" id="edit-updated-at" value="${post.updated_at}">
+                <div class="form-group">
+                    <label>title</label>
+                    <input type="text" id="editor-title" value="${escAttr(post.title || '')}">
+                </div>
+                <div class="form-group">
+                    <label>slug</label>
+                    <input type="text" id="editor-slug" value="${escAttr(post.slug || '')}">
+                </div>
+                <div class="form-group">
+                    <label>tags (comma-separated)</label>
+                    <input type="text" id="editor-tags" value="${escAttr((post.tags || []).join(', '))}">
+                </div>
+                <div class="form-group">
+                    <label>body (markdown)</label>
+                    <textarea id="editor-body">${esc(post.body || '')}</textarea>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="submitEdit('${state.editPost}', '${post.type}')">save</button>
+                    <button class="btn" onclick="viewPost('${state.editPost}')">cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function submitEdit(id, type) {
+    const title = document.getElementById('editor-title').value.trim();
+    const slug = document.getElementById('editor-slug').value.trim();
+    const body = document.getElementById('editor-body').value.trim();
+    const tags = document.getElementById('editor-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const expectedUpdatedAt = document.getElementById('edit-updated-at').value;
+    const msgEl = document.getElementById('editor-msg');
+
+    if (!title || !body) {
+        msgEl.innerHTML = '<div class="msg msg-error">Title and body are required</div>';
+        return;
+    }
+
+    try {
+        // Wiki optimistic locking: check updated_at hasn't changed
+        if (type === 'wiki') {
+            const current = await dbQueryOne(`SELECT updated_at FROM ${id};`);
+            if (current && current.updated_at !== expectedUpdatedAt) {
+                msgEl.innerHTML = '<div class="msg msg-error">This page was edited by someone else. Please refresh and try again.</div>';
+                return;
+            }
+            // Create revision before updating
+            await dbQuery(`
+                CREATE revision CONTENT {
+                    post: $post,
+                    body: (SELECT body FROM $post).body,
+                    author: $auth.id
+                };
+            `, { post: id });
+        }
+
+        await dbQuery(`
+            UPDATE ${id} SET
+                title = $title,
+                slug = $slug,
+                body = $body,
+                tags = $tags;
+        `, { title, slug, body, tags });
+
+        viewPost(id);
+    } catch (e) {
+        msgEl.innerHTML = `<div class="msg msg-error">${esc(e.message)}</div>`;
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// SEARCH
+// ════════════════════════════════════════════════════════════
+
+let searchTimeout;
+function doSearch(query) {
+    clearTimeout(searchTimeout);
+    if (!query.trim()) {
+        document.getElementById('search-results').innerHTML = '';
+        return;
+    }
+    searchTimeout = setTimeout(() => executeSearch(query.trim()), 200);
+}
+
+async function executeSearch(query) {
+    try {
+        const [results] = await dbQuery(`
+            SELECT title, type, id,
+                search::score(1) + search::score(2) AS relevance,
+                search::highlight('<b>', '</b>', 2) AS snippet
+            FROM post
+            WHERE title @1@ $query
+               OR body  @2@ $query
+            ORDER BY relevance DESC
+            LIMIT 20;
+        `, { query });
+
+        const el = document.getElementById('search-results');
+        if (!results || !results.length) {
+            el.innerHTML = '<div style="color: var(--text-dim); padding: 12px">no results</div>';
+            return;
+        }
+
+        el.innerHTML = results.map(r => `
+            <div class="post-item" style="padding: 8px 12px; cursor: pointer" onclick="closeSearch(); viewPost('${r.id}')">
+                <span class="type-badge ${r.type}">${r.type}</span>
+                <span style="color: var(--text-bright)">${esc(r.title || 'Untitled')}</span>
+                ${r.snippet ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px">${r.snippet}</div>` : ''}
+            </div>
+        `).join('');
+    } catch (e) {
+        document.getElementById('search-results').innerHTML =
+            `<div class="msg msg-error" style="margin: 8px">${esc(e.message)}</div>`;
+    }
+}
+
+function openSearch() {
+    document.getElementById('search-overlay').classList.add('open');
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').innerHTML = '';
+    document.getElementById('search-input').focus();
+}
+
+function closeSearch() {
+    document.getElementById('search-overlay').classList.remove('open');
+}
+
+// ════════════════════════════════════════════════════════════
+// PRESENCE (WebSocket)
+// ════════════════════════════════════════════════════════════
+
+let ws;
+function connectPresence() {
+    const wsUrl = location.origin.replace(/^http/, 'ws') + '/rpc/ws';
+    try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+            document.getElementById('connection-status').textContent = 'connected';
+            document.getElementById('connection-status').style.color = 'var(--green)';
+        };
+        ws.onclose = () => {
+            document.getElementById('connection-status').textContent = 'disconnected';
+            document.getElementById('connection-status').style.color = 'var(--red)';
+            setTimeout(connectPresence, 5000);
+        };
+        ws.onerror = () => {};
+    } catch {
+        document.getElementById('connection-status').textContent = 'offline';
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+    // don't capture when typing in inputs
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        if (e.key === 'Escape') {
+            e.target.blur();
+            closeSearch();
+            closeAuthModal();
+        }
+        return;
+    }
+
+    switch (e.key) {
+        case '/':
+            e.preventDefault();
+            openSearch();
+            break;
+        case 'Escape':
+            closeSearch();
+            closeAuthModal();
+            break;
+        case 'n':
+            if (state.user) navigate('new');
+            else showAuthModal('signin');
+            break;
+        case 'j': selectNext(1); break;
+        case 'k': selectNext(-1); break;
+        case 'Enter': openSelected(); break;
+        case 'e':
+            if (state.view === 'post' && state.currentPost && state.user) {
+                navigate('edit', { editPost: state.currentPost });
+            }
+            break;
+    }
+});
+
+function selectNext(dir) {
+    const items = document.querySelectorAll('#post-list .post-item, .panel-body .post-item');
+    if (!items.length) return;
+
+    // remove old highlight
+    items.forEach(el => el.style.background = '');
+
+    state.selectedIndex = Math.max(0, Math.min(items.length - 1, state.selectedIndex + dir));
+    items[state.selectedIndex].style.background = 'var(--bg-input)';
+    items[state.selectedIndex].scrollIntoView({ block: 'nearest' });
+}
+
+function openSelected() {
+    const items = document.querySelectorAll('#post-list .post-item, .panel-body .post-item');
+    if (state.selectedIndex >= 0 && state.selectedIndex < items.length) {
+        const id = items[state.selectedIndex].dataset.id;
+        if (id) viewPost(id);
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════════
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+}
+
+function escAttr(s) {
+    return (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function slugify(s) {
+    return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString();
+}
+
+// ════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════
+
+(async function init() {
+    await loadUser();
+    renderAuthControls();
+    navigate('home');
+    connectPresence();
+})();
+</script>
+</body>
+</html>

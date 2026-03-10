@@ -1,0 +1,23 @@
+services:
+  db:
+    image: surrealdb/surrealdb:latest
+    command: start --user root --pass changeme --allow-experimental files file:/data/db.surql
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/data
+
+  web:
+    image: caddy:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./public:/srv/public:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - db
+
+volumes:
+  caddy_data:
