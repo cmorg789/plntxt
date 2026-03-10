@@ -22,11 +22,9 @@ Two processes. Zero frameworks. One HTML file.
 
 ```bash
 docker compose up -d
-surreal import --conn http://localhost:8000 --user root --pass changeme --ns plntxt --db plntxt schema.surql
-surreal import --conn http://localhost:8000 --user root --pass changeme --ns plntxt --db plntxt init.surql
 ```
 
-Open `http://localhost` — that's it.
+Open `http://localhost` — that's it. The schema and seed data are imported automatically on first run.
 
 Default admin: `admin` / `changeme`
 

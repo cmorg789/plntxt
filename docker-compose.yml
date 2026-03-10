@@ -6,6 +6,27 @@ services:
       - "8000"
     volumes:
       - ./data:/data
+    healthcheck:
+      test: ["CMD", "surreal", "isready", "--conn", "http://localhost:8000"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  init:
+    image: surrealdb/surrealdb:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./schema.surql:/schema.surql:ro
+      - ./init.surql:/init.surql:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        surreal import --conn http://db:8000 --user root --pass changeme --ns plntxt --db plntxt /schema.surql &&
+        surreal import --conn http://db:8000 --user root --pass changeme --ns plntxt --db plntxt /init.surql &&
+        echo 'plntxt initialized'
+    restart: "no"
 
   web:
     image: caddy:alpine
@@ -17,7 +38,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   caddy_data:
