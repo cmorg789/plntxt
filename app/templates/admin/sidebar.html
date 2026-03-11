@@ -17,6 +17,10 @@
       <span class="sidebar-stat-value">{{ stats.memory_count }}</span>
       <span class="sidebar-stat-label">memories</span>
     </div>
+    <div class="sidebar-stat">
+      <span class="sidebar-stat-value">{{ stats.total_views }}</span>
+      <span class="sidebar-stat-label">views</span>
+    </div>
   </div>
 </div>
 
@@ -63,6 +67,20 @@
         {{ comment.user.username }}
         {% if comment.post %} on <a href="/posts/{{ comment.post.slug }}">{{ comment.post.title[:30] }}{% if comment.post.title|length > 30 %}&hellip;{% endif %}</a>{% endif %}
       </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if top_posts %}
+<div class="sidebar-section">
+  <h3>Top Posts</h3>
+  <ul class="sidebar-queue">
+    {% for post in top_posts %}
+    <li class="sidebar-item">
+      <div class="sidebar-item-body"><a href="/posts/{{ post.slug }}">{{ post.title[:40] }}{% if post.title|length > 40 %}&hellip;{% endif %}</a></div>
+      <div class="sidebar-item-meta">{{ post.view_count }} views</div>
     </li>
     {% endfor %}
   </ul>

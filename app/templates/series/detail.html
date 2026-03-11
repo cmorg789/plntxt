@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}{{ series.title }} — plntxt{% endblock %}
+
+{% block content %}
+<div class="series-page">
+    <header class="series-header">
+        <h1>{{ series.title }}</h1>
+        {% if series.description %}
+        <div class="series-description markdown-content" data-markdown="{{ series.description | e }}"></div>
+        {% endif %}
+        <p class="series-count">{{ posts|length }} post{{ 's' if posts|length != 1 else '' }} in this series</p>
+    </header>
+
+    {% if posts %}
+    <ol class="series-post-list">
+        {% for post in posts %}
+        <li class="series-post-item">
+            <span class="series-position">{{ post.series_position or loop.index }}</span>
+            <div>
+                <h2><a href="/posts/{{ post.slug }}">{{ post.title }}</a></h2>
+                <div class="post-meta">
+                    <time datetime="{{ post.published_at.isoformat() if post.published_at else post.created_at.isoformat() }}">
+                        {{ (post.published_at or post.created_at).strftime('%B %-d, %Y') }}
+                    </time>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty-state">No posts in this series yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

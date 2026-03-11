@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Revisions: {{ post.title }} — plntxt{% endblock %}
+
+{% block content %}
+<div class="revisions-page">
+    <h1>Revision history</h1>
+    <p class="revision-post-link"><a href="/posts/{{ post.slug }}">{{ post.title }}</a></p>
+
+    {% if revisions %}
+    <ol class="revision-list">
+        {% for rev in revisions %}
+        <li class="revision-item">
+            <div class="revision-meta">
+                <strong>Revision {{ rev.revision_number }}</strong>
+                <time datetime="{{ rev.created_at.isoformat() }}">
+                    {{ rev.created_at.strftime('%B %-d, %Y at %-I:%M %p') }}
+                </time>
+                {% if rev.title != post.title %}
+                <span class="revision-title-change">Title: "{{ rev.title }}"</span>
+                {% endif %}
+            </div>
+            <details>
+                <summary>show content</summary>
+                <div class="revision-body markdown-content" data-markdown="{{ rev.body | e }}"></div>
+            </details>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty-state">No revisions recorded yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

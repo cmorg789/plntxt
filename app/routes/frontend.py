@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import Text, cast, func, literal, or_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,9 @@ from app.auth.passwords import hash_password, verify_password
 from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
 from app.models.comment import AuthorType, Comment, CommentStatus
+from app.models.config import Config
+from app.models.revision import PostRevision
+from app.models.series import Series
 from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post, PostStatus
 from app.models.user import User, UserRole
@@ -25,6 +28,58 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/")
 async def index():
     return RedirectResponse(url="/posts", status_code=302)
+
+
+@router.get("/about")
+async def about_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    result = await db.execute(select(Config).where(Config.key == "about_page"))
+    config_row = result.scalar_one_or_none()
+    content = ""
+    if config_row and config_row.value:
+        content = config_row.value.get("content", "")
+    return templates.TemplateResponse(
+        "about.html",
+        {"request": request, "content": content, "current_user": current_user},
+    )
+
+
+@router.get("/search")
+async def search_page(
+    request: Request,
+    q: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    posts = []
+    if q and len(q.strip()) > 0:
+        q = q.strip()
+        like_pattern = f"%{q}%"
+        title_sim = func.similarity(Post.title, q)
+        body_sim = func.similarity(Post.body, q)
+        stmt = (
+            select(Post)
+            .where(
+                Post.status == PostStatus.PUBLISHED,
+                or_(
+                    title_sim > 0.1,
+                    body_sim > 0.1,
+                    Post.title.ilike(like_pattern),
+                    Post.body.ilike(like_pattern),
+                ),
+            )
+            .order_by((title_sim + body_sim).desc())
+            .limit(20)
+        )
+        result = await db.execute(stmt)
+        posts = list(result.scalars().all())
+    return templates.TemplateResponse(
+        "search.html",
+        {"request": request, "posts": posts, "q": q or "", "current_user": current_user},
+    )
 
 
 @router.get("/posts")
@@ -95,6 +150,34 @@ async def post_detail(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Post not found")
 
+    # Increment view count atomically
+    await db.execute(
+        sql_update(Post).where(Post.id == post.id).values(view_count=Post.view_count + 1)
+    )
+    await db.commit()
+
+    # Re-fetch with series loaded for nav
+    result = await db.execute(
+        select(Post)
+        .where(Post.id == post.id)
+        .options(selectinload(Post.series).selectinload(Series.posts))
+    )
+    post = result.scalar_one()
+
+    # Series navigation
+    prev_series_post = None
+    next_series_post = None
+    if post.series:
+        siblings = sorted(
+            [p for p in post.series.posts if p.status == PostStatus.PUBLISHED and p.id != post.id],
+            key=lambda p: p.series_position or 0,
+        )
+        for s in siblings:
+            if (s.series_position or 0) < (post.series_position or 0):
+                prev_series_post = s
+            elif (s.series_position or 0) > (post.series_position or 0) and next_series_post is None:
+                next_series_post = s
+
     # Load comment tree: admins see all statuses, others see only visible
     is_admin = current_user and current_user.role == UserRole.ADMIN
     comment_query = select(Comment).where(
@@ -121,7 +204,62 @@ async def post_detail(
             "post": post,
             "comments": comments,
             "current_user": current_user,
+            "prev_series_post": prev_series_post,
+            "next_series_post": next_series_post,
         },
+    )
+
+
+@router.get("/posts/{slug}/revisions")
+async def post_revisions_page(
+    slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    result = await db.execute(
+        select(Post).where(Post.slug == slug, Post.status == PostStatus.PUBLISHED)
+    )
+    post = result.scalar_one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    revs_result = await db.execute(
+        select(PostRevision)
+        .where(PostRevision.post_id == post.id)
+        .order_by(PostRevision.revision_number.desc())
+    )
+    revisions = list(revs_result.scalars().all())
+
+    return templates.TemplateResponse(
+        "posts/revisions.html",
+        {"request": request, "post": post, "revisions": revisions, "current_user": current_user},
+    )
+
+
+@router.get("/series/{slug}")
+async def series_detail_page(
+    slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    from app.models.series import Series
+    result = await db.execute(
+        select(Series).where(Series.slug == slug).options(selectinload(Series.posts))
+    )
+    series = result.scalar_one_or_none()
+    if series is None:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    posts = sorted(
+        [p for p in series.posts if p.status == PostStatus.PUBLISHED],
+        key=lambda p: p.series_position or 0,
+    )
+
+    return templates.TemplateResponse(
+        "series/detail.html",
+        {"request": request, "series": series, "posts": posts, "current_user": current_user},
     )
 
 

@@ -13,7 +13,7 @@ from app.models.comment import Comment, CommentStatus, ResponseStatus
 from app.models.config import Config
 from app.models.memory import Memory
 from app.models.moderation import ModerationAction, ModerationLog
-from app.models.post import Post
+from app.models.post import Post, PostStatus
 from app.models.user import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -40,6 +40,7 @@ async def _collect_stats(db: AsyncSession) -> dict:
     )
     user_count = await db.scalar(select(func.count()).select_from(User))
     memory_count = await db.scalar(select(func.count()).select_from(Memory))
+    total_views = await db.scalar(select(func.sum(Post.view_count)).select_from(Post))
 
     return {
         "post_count": post_count,
@@ -48,6 +49,7 @@ async def _collect_stats(db: AsyncSession) -> dict:
         "flagged_comments": flagged_comments,
         "user_count": user_count,
         "memory_count": memory_count,
+        "total_views": total_views or 0,
     }
 
 
@@ -77,6 +79,14 @@ async def sidebar_partial(
     )
     pending_comments = list(pending_result.scalars().all())
 
+    top_posts_result = await db.execute(
+        select(Post)
+        .where(Post.status == PostStatus.PUBLISHED)
+        .order_by(Post.view_count.desc())
+        .limit(5)
+    )
+    top_posts = list(top_posts_result.scalars().all())
+
     return templates.TemplateResponse(
         "admin/sidebar.html",
         {
@@ -84,6 +94,7 @@ async def sidebar_partial(
             "stats": stats,
             "flagged_comments": flagged_comments,
             "pending_comments": pending_comments,
+            "top_posts": top_posts,
         },
     )
 

@@ -94,6 +94,16 @@ async def update_post(slug: str, **kwargs) -> dict:
     return resp.json()
 
 
+async def get_engagement_summary(limit: int = 20) -> dict:
+    resp = await _request("GET", "/api/posts/engagement", params={"limit": limit})
+    return resp.json()
+
+
+async def search_posts(q: str, limit: int = 20) -> dict:
+    resp = await _request("GET", "/api/posts/search", params={"q": q, "limit": limit})
+    return resp.json()
+
+
 # ---------------------------------------------------------------------------
 # Comments
 # ---------------------------------------------------------------------------
@@ -240,6 +250,34 @@ async def upload_media(
         if alt_text:
             data["alt_text"] = alt_text
         resp = await _request("POST", "/media", files=files, data=data)
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Series
+# ---------------------------------------------------------------------------
+
+async def list_series() -> dict:
+    resp = await _request("GET", "/api/series")
+    return resp.json()
+
+
+async def create_series(title: str, description: str | None = None) -> dict:
+    payload: dict = {"title": title}
+    if description is not None:
+        payload["description"] = description
+    resp = await _request("POST", "/api/series", json=payload)
+    return resp.json()
+
+
+async def assign_post_to_series(
+    series_slug: str, post_slug: str, position: int
+) -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/series/{series_slug}/posts",
+        json={"post_slug": post_slug, "position": position},
+    )
     return resp.json()
 
 

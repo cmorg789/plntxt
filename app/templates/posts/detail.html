@@ -29,12 +29,30 @@
             {% endif %}
         </div>
     </header>
+    <div class="post-header-footer">
+        <a href="/posts/{{ post.slug }}/revisions" class="revision-link">revisions</a>
+    </div>
+
+    {% if post.series %}
+    <nav class="series-nav">
+        <span class="series-label">Part {{ post.series_position }} of <a href="/series/{{ post.series.slug }}">{{ post.series.title }}</a></span>
+        <div class="series-links">
+            {% if prev_series_post %}<a href="/posts/{{ prev_series_post.slug }}" class="series-prev">&larr; {{ prev_series_post.title }}</a>{% endif %}
+            {% if next_series_post %}<a href="/posts/{{ next_series_post.slug }}" class="series-next">{{ next_series_post.title }} &rarr;</a>{% endif %}
+        </div>
+    </nav>
+    {% endif %}
 
     <div class="post-body markdown-content" data-markdown="{{ post.body | e }}"></div>
 </article>
 
 <section class="comments" id="comments">
-    <h2>Comments</h2>
+    <div class="comments-header">
+        <h2>Comments</h2>
+        {% if current_user and current_user.role.value == 'admin' %}
+        <span class="post-views">{{ post.view_count }} view{{ 's' if post.view_count != 1 else '' }}</span>
+        {% endif %}
+    </div>
 
     {% if current_user %}
     <form class="comment-form"

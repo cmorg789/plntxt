@@ -1,16 +1,18 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from slugify import slugify
-from sqlalchemy import select
+from sqlalchemy import Text, case, cast, func, literal, or_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_admin_user, get_agent_or_admin, get_optional_user
 from app.db import get_db
+from app.models.comment import Comment, CommentStatus
 from app.models.post import Post, PostStatus
+from app.models.revision import PostRevision
 from app.pagination import decode_cursor, encode_cursor
-from app.models.schemas.posts import PostCreate, PostListResponse, PostResponse, PostUpdate
+from app.models.schemas.posts import PostCreate, PostListResponse, PostResponse, PostUpdate, PostRevisionListResponse, PostRevisionResponse, PostEngagementItem, EngagementSummaryResponse
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -75,6 +77,102 @@ async def list_posts(
     )
 
 
+@router.get("/search", response_model=PostListResponse)
+async def search_posts(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    like_pattern = f"%{q}%"
+    title_sim = func.similarity(Post.title, q)
+    body_sim = func.similarity(Post.body, q)
+    stmt = (
+        select(Post)
+        .where(
+            Post.status == PostStatus.PUBLISHED,
+            or_(
+                title_sim > 0.1,
+                body_sim > 0.1,
+                Post.title.ilike(like_pattern),
+                Post.body.ilike(like_pattern),
+            ),
+        )
+        .order_by((title_sim + body_sim).desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    posts = list(result.scalars().all())
+    return PostListResponse(
+        items=[PostResponse.model_validate(p) for p in posts],
+        next_cursor=None,
+    )
+
+
+@router.get("/engagement", response_model=EngagementSummaryResponse)
+async def get_engagement_summary(
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_agent_or_admin),
+):
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+
+    stmt = (
+        select(
+            Post,
+            func.count(Comment.id).label("comment_count"),
+            func.count(case((Comment.created_at >= week_ago, Comment.id))).label("comment_count_recent"),
+        )
+        .outerjoin(Comment, (Comment.post_id == Post.id) & (Comment.status == CommentStatus.VISIBLE))
+        .where(Post.status == PostStatus.PUBLISHED)
+        .group_by(Post.id)
+        .order_by(Post.view_count.desc(), func.count(Comment.id).desc())
+        .limit(limit)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    total_views = await db.scalar(select(func.sum(Post.view_count)).select_from(Post)) or 0
+
+    return EngagementSummaryResponse(
+        posts=[
+            PostEngagementItem(
+                id=row.Post.id,
+                title=row.Post.title,
+                slug=row.Post.slug,
+                view_count=row.Post.view_count,
+                comment_count=row.comment_count,
+                comment_count_recent=row.comment_count_recent,
+                published_at=row.Post.published_at,
+            )
+            for row in rows
+        ],
+        total_views=total_views,
+        generated_at=now,
+    )
+
+
+@router.get("/{slug}/revisions", response_model=PostRevisionListResponse)
+async def list_post_revisions(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Post).where(Post.slug == slug))
+    post = result.scalar_one_or_none()
+    if post is None or post.status != PostStatus.PUBLISHED:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    revs = await db.execute(
+        select(PostRevision)
+        .where(PostRevision.post_id == post.id)
+        .order_by(PostRevision.revision_number.desc())
+    )
+    return PostRevisionListResponse(
+        items=[PostRevisionResponse.model_validate(r) for r in revs.scalars().all()]
+    )
+
+
 @router.get("/{slug}", response_model=PostResponse)
 async def get_post(
     slug: str,
@@ -135,6 +233,18 @@ async def update_post(
         raise HTTPException(status_code=404, detail="Post not found")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Snapshot current state before applying changes
+    if "body" in update_data or "title" in update_data:
+        rev_count = await db.scalar(
+            select(func.count()).select_from(PostRevision).where(PostRevision.post_id == post.id)
+        )
+        db.add(PostRevision(
+            post_id=post.id,
+            revision_number=(rev_count or 0) + 1,
+            title=post.title,
+            body=post.body,
+        ))
 
     for field, value in update_data.items():
         setattr(post, field, value)

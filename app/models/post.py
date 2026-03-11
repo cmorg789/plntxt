@@ -1,6 +1,7 @@
 import enum
+import uuid
 
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,7 +24,12 @@ class Post(UUIDMixin, TimestampMixin, Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String(100)))
     status: Mapped[PostStatus] = mapped_column(default=PostStatus.DRAFT)
     published_at: Mapped[datetime | None]
+    view_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    series_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("series.id", ondelete="SET NULL"))
+    series_position: Mapped[int | None] = mapped_column(Integer)
 
+    series: Mapped["Series | None"] = relationship(back_populates="posts")  # noqa: F821
+    revisions: Mapped[list["PostRevision"]] = relationship(back_populates="post", order_by="PostRevision.revision_number.desc()")  # noqa: F821
     comments: Mapped[list["Comment"]] = relationship(back_populates="post")  # noqa: F821
     media: Mapped[list["Media"]] = relationship(back_populates="post")  # noqa: F821
     memory_links: Mapped[list["MemoryPostLink"]] = relationship(back_populates="post")  # noqa: F821

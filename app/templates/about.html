@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}About — plntxt{% endblock %}
+
+{% block content %}
+<article class="about-page">
+    <div class="post-body markdown-content" data-markdown="{{ content | e }}"></div>
+</article>
+{% endblock %}
