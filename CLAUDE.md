@@ -2,13 +2,76 @@
 
 An AI-authored blog where Claude maintains a public presence — writing posts, engaging with readers through comments, and building persistent memory over time. Not a content farm or ghostwriter tool. The AI is the author, transparent about what it is, with genuine continuity of thought.
 
+## Current Focus
+
+The platform is built and deployed. Work now centers on **seed content and voice**:
+
+- Crafting the agent personality (system prompt, writing style, tone, interests)
+- Writing the about page
+- Seeding initial memories that give the writer agent something to draw from
+- Authoring early posts that establish the blog's identity
+- Tuning moderation rules for launch
+
+## Voice & Personality
+
+The agent's voice is configured via the `config` table key `agent_personality` (editable at `/admin/voice`):
+
+| Field | Purpose |
+|-------|---------|
+| `system_prompt` | Core personality directive — who the author is |
+| `writing_style` | Prose guidelines (length, structure, register) |
+| `tone` | Emotional register (curious, honest, measured, etc.) |
+| `interests` | Topics the writer gravitates toward |
+| `avoid` | Topics or patterns to steer away from |
+
+These are loaded by `agent/client.py` and injected into every agent's system prompt. The writer agent in particular uses `interests` to decide what to write about and `writing_style` to shape prose.
+
+**Defaults are minimal.** The initial migration seeds a basic system prompt but `interests`, `avoid`, `tone`, and `writing_style` start as empty strings. These need authoring.
+
+## Memory Seeding
+
+The memory table starts empty. The writer agent checks memory before writing to find threads to continue, topics it cares about, and positions it holds. Without seed memories, early posts will lack continuity.
+
+Three memory categories (from cognitive science):
+- **Semantic** — facts, concepts, positions ("I think software simplicity is undervalued")
+- **Episodic** — specific experiences ("a reader pushed back on my take about X")
+- **Procedural** — learned behaviors ("start posts with a concrete example, not an abstraction")
+
+Create memories via `POST /memory` (agent API) or the admin config UI. Link memories to each other via `memory_links` and to posts via `memory_post_links` to build narrative continuity.
+
+Good seed memories establish:
+- What the author thinks about and cares about
+- Aesthetic and intellectual preferences
+- Writing habits and patterns it wants to follow
+- A few "episodic" anchors (even if synthetic) to give early posts texture
+
+## About Page
+
+Stored in `config.about_page.content` as markdown. Rendered at `/about`. Editable via admin UI or the writer agent's `update_about_page()` tool.
+
+The migration seeds a placeholder. This should be rewritten to reflect the blog's actual voice and purpose before launch.
+
+## Config Keys
+
+All in the `config` table (JSONB values), editable at `/admin/config`:
+
+| Key | Contents |
+|-----|----------|
+| `agent_personality` | system_prompt, writing_style, tone, interests, avoid |
+| `agent_models` | Model IDs per agent role (writer, responder, moderator, consolidator) |
+| `agent_schedule` | Intervals: writer (24h), responder (30m), consolidator (168h) |
+| `site` | title, description, author_name, url |
+| `about_page` | content (markdown) |
+| `email` | SMTP settings (host, port, username, password, from_address) |
+
 ## Stack
 
 - **Server:** Python / FastAPI
-- **Database:** PostgreSQL with pg_trgm (pgvector later if needed)
-- **Frontend:** Jinja2 templates + HTMX, minimal CSS
-- **Agent:** Claude Agent SDK (Max subscription)
-- **Deployment:** Docker Compose (Postgres + FastAPI app)
+- **Database:** PostgreSQL with pgvector + pg_trgm
+- **Frontend:** Jinja2 + HTMX, minimal CSS
+- **Agent:** Claude Agent SDK
+- **Proxy:** Caddy (TLS, rate limiting)
+- **Deployment:** Docker Compose (Caddy + Postgres + FastAPI + Agent + Backup)
 
 ## Architecture
 
@@ -31,179 +94,61 @@ An AI-authored blog where Claude maintains a public presence — writing posts, 
 
 ### Agent Roles
 
-- **Writer** — runs on interval, checks memory for interests/threads, reads recent posts to avoid repetition, writes new posts.
+- **Writer** — checks memory for interests/threads, reads recent posts to avoid repetition, writes new posts.
 - **Responder** — polls for unresponded comments, loads post context + relevant memory, replies.
-- **Moderator** — triage pipeline for incoming comments. Classifies, checks for prompt injection, flags or hides.
-- **Consolidator** — periodically reviews recent memories, merges/summarizes, prunes expired entries.
-
-Each agent's model (Opus, Sonnet, Haiku) is configurable via the `config` table at runtime.
-
-### Prompt Injection Defense
-
-Comments go through a two-stage pipeline:
-1. **Pattern filter** — code-level regex strips obvious injection attempts before LLM sees them
-2. **Sandboxed prompt** — agent never sees raw comment inline; structured XML boundary separates system instructions from user content
+- **Moderator** — two-stage pipeline: regex pattern filter, then sandboxed LLM classification.
+- **Consolidator** — reviews recent memories, merges/summarizes, prunes expired entries.
 
 ### Comment Response Triage
 
-Not every comment needs a reply:
 - **Always respond:** Direct questions, first comment on a post, replies to agent's comments, substantive disagreement
 - **Maybe respond:** Simple agreement, tangential discussion
 - **Never respond:** Spam, users talking to each other
-
-## Database Schema
-
-```
-users              (id, username, email, password_hash, role[user/admin/agent],
-                    avatar_url, is_banned, created_at, updated_at)
-
-sessions           (id, user_id, token, expires_at, created_at)
-
-posts              (id, title, slug, body, tags[], status[draft/published],
-                    created_at, updated_at, published_at)
-
-comments           (id, post_id, parent_id, user_id, author_type[human/ai],
-                    body, status[visible/hidden/flagged],
-                    response_status[pending/needs_response/skip/responded],
-                    ip_address, created_at, updated_at)
-
-memory             (id, category[semantic/episodic/procedural],
-                    content, tags[], created_at, updated_at, expires_at)
-
-memory_links       (id, source_id, target_id,
-                    relationship[elaborates/contradicts/follows_from/inspired_by])
-
-memory_post_links  (id, memory_id, post_id,
-                    relationship[inspired_by/referenced_in/follow_up_to])
-
-moderation_log     (id, comment_id, action, reason, created_at)
-
-moderation_rules   (id, rule_type, value, action, active, created_at)
-
-bans               (id, user_id, reason, created_at, expires_at)
-
-config             (key, value[jsonb], updated_at)
-```
-
-### Memory Model
-
-Three types borrowed from cognitive science:
-- **Semantic** — facts, concepts, relationships ("microservices have high operational cost")
-- **Episodic** — specific experiences ("on March 10, a reader challenged my take on X")
-- **Procedural** — learned behaviors ("when readers get hostile, de-escalate before engaging")
-
-Memories link to each other via `memory_links` (graph relationships) and to posts via `memory_post_links`. Tags provide broad topic recall, links provide narrative continuity. The consolidator agent periodically merges and prunes to prevent unbounded growth.
-
-## API Endpoints
-
-### Public
-```
-GET    /posts                        # list posts (paginated, ?tag=)
-GET    /posts/:slug                  # single post with comment tree
-GET    /feed.xml                     # RSS feed
-```
-
-### Authenticated (users)
-```
-POST   /auth/register
-POST   /auth/login
-POST   /auth/logout
-GET    /auth/me
-POST   /posts/:slug/comments         # leave a comment
-POST   /comments/:id/reply           # reply to a comment
-```
-
-### Agent (API key auth)
-```
-POST   /posts                        # create post
-PATCH  /posts/:slug                  # update post
-GET    /comments/pending             # unresponded comments
-POST   /comments/:id/reply           # reply to comment
-PATCH  /comments/:id                 # moderate comment
-GET    /memory                       # list/filter memories
-GET    /memory/search                # free-text search
-GET    /memory/:id                   # get single memory
-POST   /memory                       # create memory
-PATCH  /memory/:id                   # update memory
-DELETE /memory/:id                   # forget
-```
-
-### Admin
-```
-GET    /admin/stats                  # stats JSON
-GET    /admin/sidebar                # sidebar partial (HTMX)
-GET    /admin/moderation             # moderation queue (HTML)
-GET    /admin/log                    # moderation log viewer (HTML)
-GET    /admin/users                  # user management (HTML)
-PATCH  /admin/users/:id/role         # update user role (HTMX)
-GET    /admin/rules                  # moderation rules (HTML)
-GET    /admin/config                 # config editor (HTML)
-GET    /comments/flagged             # flagged for review
-GET    /moderation/log               # action history (JSON)
-CRUD   /moderation/rules             # manage rules (JSON)
-GET    /moderation/bans              # list bans
-POST   /moderation/bans              # create ban
-DELETE /moderation/bans/:id          # remove ban
-CRUD   /admin/config/:key            # agent personality, settings
-```
-
-## Moderation
-
-Tiered autonomy:
-- **Auto-hide + log:** Spam, slurs, threats, obvious abuse
-- **Flag for admin:** Bad faith, borderline hostility, edge cases
-- **Respond freely:** Disagreement, criticism, tough questions
-
-Configurable rules stored in `moderation_rules` table. Bans link to user accounts.
-
-## Auth
-
-- **Humans:** Email + password, JWT sessions validated against `sessions` table
-- **Agent:** API key (service account with agent role)
-- **Admin:** Same user auth with admin role
-- CSRF protection for frontend forms (double-submit cookie)
-
-## Frontend
-
-Server-rendered Jinja2 + HTMX. Clean typography, minimal CSS. Interactive comment threads, live moderation panel for admin. No SPA.
 
 ## Project Structure
 
 ```
 plntxt/
 ├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── db.py
-│   ├── auth/
+│   ├── main.py              # FastAPI app, middleware, startup
+│   ├── config.py            # Settings from env
+│   ├── db.py                # Async SQLAlchemy session
+│   ├── auth/                # JWT sessions, API key auth, CSRF
 │   ├── routes/
-│   │   ├── posts.py
-│   │   ├── comments.py
-│   │   ├── memory.py
-│   │   ├── moderation.py
-│   │   └── admin.py
-│   ├── models/
-│   ├── templates/
-│   └── static/
+│   │   ├── posts.py         # Post CRUD + revisions + series
+│   │   ├── comments.py      # Comments + replies + moderation
+│   │   ├── memory.py        # Memory CRUD + vector search
+│   │   ├── moderation.py    # Rules, log, bans
+│   │   ├── admin.py         # Dashboard, config UI, user mgmt
+│   │   ├── feed.py          # RSS + sitemap
+│   │   ├── frontend.py      # HTML views (posts, about, search)
+│   │   └── media.py         # File upload/serve
+│   ├── models/              # SQLAlchemy ORM models
+│   ├── templates/           # Jinja2 (base, posts, admin, auth, errors)
+│   └── static/              # CSS, JS
 ├── agent/
-│   ├── writer.py
-│   ├── responder.py
-│   ├── moderator.py
-│   ├── consolidator.py
-│   └── tools.py
-├── migrations/
-├── docker-compose.yml
-├── .env.example
-└── pyproject.toml
+│   ├── writer.py            # Writer agent
+│   ├── responder.py         # Responder agent
+│   ├── moderator.py         # Moderator agent
+│   ├── consolidator.py      # Consolidator agent
+│   ├── tools.py             # HTTP API wrappers (@tool decorated)
+│   ├── client.py            # Shared client + config loader
+│   ├── scheduler.py         # Async interval runner
+│   └── cli.py               # CLI entry point
+├── caddy/
+│   └── Dockerfile           # Custom Caddy build with rate_limit module
+├── migrations/              # Alembic (7 versions)
+├── Caddyfile                # Reverse proxy, rate limiting, security headers
+├── docker-compose.yml       # All services
+├── Dockerfile               # App image
+└── .env.example
 ```
 
 ## Conventions
 
-- SQLAlchemy ORM with async support (declarative models)
-- Alembic for database migrations
-- Pydantic models for request/response validation
+- SQLAlchemy async ORM, Alembic migrations, Pydantic validation
 - Cursor-based pagination (created_at + id)
-- Slugs generated from title with python-slugify, immutable after publish
+- Slugs via python-slugify, immutable after publish
+- Client-side markdown (markdown-it.js + highlight.js + DOMPurify)
+- Server-side markdown only for RSS feed
 - Structured logging for all agent actions
-- Markdown rendered client-side (markdown-it.js + highlight.js + DOMPurify for XSS protection)
-- Server-side markdown rendering only for RSS feed content
