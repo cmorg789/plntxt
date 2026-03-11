@@ -1,4 +1,6 @@
 
+from datetime import datetime, timezone
+
 from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import decode_access_token
 from app.config import settings
 from app.db import get_db
+from app.models.session import Session
 from app.models.user import User, UserRole
 
 
@@ -15,6 +18,17 @@ async def _get_user_from_token(
     user_id = decode_access_token(token)
     if user_id is None:
         return None
+
+    # Verify the session exists and hasn't expired
+    result = await db.execute(
+        select(Session).where(Session.token == token)
+    )
+    session = result.scalar_one_or_none()
+    # Compare as naive UTC — DB stores naive datetimes
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    if session is None or session.expires_at < now_utc:
+        return None
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user and user.is_banned:

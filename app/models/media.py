@@ -22,4 +22,4 @@ class Media(UUIDMixin, Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
-    post: Mapped["Post | None"] = relationship(back_populates="media")  # noqa: F821
+    post: Mapped["Post | None"] = relationship()  # noqa: F821

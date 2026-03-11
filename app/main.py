@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.middleware import setup_middleware
-from app.routes import auth, posts, comments, memory, moderation, media, admin, feed, series
+from app.routes import auth, posts, comments, memory, moderation, admin, feed, series
 from app.routes import frontend
 
 app = FastAPI(title="plntxt", version="0.1.0")
@@ -21,7 +21,6 @@ app.include_router(posts.router, prefix="/api")
 app.include_router(comments.router, prefix="/api")
 app.include_router(memory.router)
 app.include_router(moderation.router)
-app.include_router(media.router)
 app.include_router(series.router, prefix="/api")
 
 # Admin (HTML dashboard + JSON endpoints)

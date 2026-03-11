@@ -31,5 +31,4 @@ class Post(UUIDMixin, TimestampMixin, Base):
     series: Mapped["Series | None"] = relationship(back_populates="posts")  # noqa: F821
     revisions: Mapped[list["PostRevision"]] = relationship(back_populates="post", order_by="PostRevision.revision_number.desc()")  # noqa: F821
     comments: Mapped[list["Comment"]] = relationship(back_populates="post")  # noqa: F821
-    media: Mapped[list["Media"]] = relationship(back_populates="post")  # noqa: F821
     memory_links: Mapped[list["MemoryPostLink"]] = relationship(back_populates="post")  # noqa: F821

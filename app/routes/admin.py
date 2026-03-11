@@ -12,9 +12,9 @@ from app.db import get_db
 from app.models.comment import Comment, CommentStatus, ResponseStatus
 from app.models.config import Config
 from app.models.memory import Memory
-from app.models.moderation import ModerationAction, ModerationLog
+from app.models.moderation import ModerationAction, ModerationLog, ModerationRule, RuleType
 from app.models.post import Post, PostStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -186,7 +186,12 @@ async def _update_comment_status(
     comment.status = new_status
 
     # Log the moderation action
-    action = ModerationAction.HIDE if new_status == CommentStatus.HIDDEN else ModerationAction.FLAG
+    if new_status == CommentStatus.HIDDEN:
+        action = ModerationAction.HIDE
+    elif new_status == CommentStatus.VISIBLE:
+        action = ModerationAction.APPROVE
+    else:
+        action = ModerationAction.FLAG
     log_entry = ModerationLog(
         comment_id=comment.id,
         action=action,
@@ -417,3 +422,306 @@ async def update_config(
     await db.commit()
     await db.refresh(config)
     return {"key": config.key, "value": config.value, "updated_at": config.updated_at.isoformat()}
+
+
+# ---------------------------------------------------------------------------
+# Moderation Rules (HTML UI)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/rules", response_class=HTMLResponse)
+async def rules_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    # Active/inactive rules (not proposals)
+    result = await db.execute(
+        select(ModerationRule)
+        .where(ModerationRule.proposed == False)  # noqa: E712
+        .order_by(ModerationRule.created_at.desc())
+    )
+    rules = list(result.scalars().all())
+
+    # Proposed rules awaiting review
+    proposed_result = await db.execute(
+        select(ModerationRule)
+        .where(ModerationRule.proposed == True)  # noqa: E712
+        .order_by(ModerationRule.created_at.desc())
+    )
+    proposed_rules = list(proposed_result.scalars().all())
+
+    return templates.TemplateResponse(
+        "admin/rules.html",
+        {"request": request, "rules": rules, "proposed_rules": proposed_rules},
+    )
+
+
+def _render_rule_row(rule: ModerationRule) -> str:
+    """Return an HTML table row for HTMX swap."""
+    active_badge = (
+        '<span class="status-badge status-visible">active</span>'
+        if rule.active
+        else '<span class="status-badge status-hidden">inactive</span>'
+    )
+    toggle_label = "Disable" if rule.active else "Enable"
+    toggle_class = "btn-hide" if rule.active else "btn-approve"
+
+    return f"""<tr id="rule-{rule.id}">
+  <td><span class="status-badge">{rule.rule_type.value}</span></td>
+  <td><code>{rule.value}</code></td>
+  <td><span class="status-badge status-{rule.action.value}">{rule.action.value}</span></td>
+  <td>{active_badge}</td>
+  <td class="nowrap">{rule.created_at.strftime('%Y-%m-%d %H:%M')}</td>
+  <td class="actions nowrap">
+    <button
+      hx-post="/admin/rules/{rule.id}/toggle"
+      hx-target="#rule-{rule.id}"
+      hx-swap="outerHTML"
+      class="btn {toggle_class} btn-small"
+    >{toggle_label}</button>
+    <button
+      hx-delete="/admin/rules/{rule.id}/delete"
+      hx-target="#rule-{rule.id}"
+      hx-swap="outerHTML"
+      hx-confirm="Delete this rule?"
+      class="btn btn-hide btn-small"
+    >Delete</button>
+  </td>
+</tr>"""
+
+
+@router.post("/rules/create", response_class=HTMLResponse)
+async def create_rule_form(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    form_data = await request.form()
+    rule_type = form_data.get("rule_type", "keyword")
+    value = form_data.get("value", "").strip()
+    action = form_data.get("action", "flag")
+
+    if not value:
+        raise HTTPException(status_code=422, detail="Value is required")
+
+    rule = ModerationRule(
+        rule_type=RuleType(rule_type),
+        value=value,
+        action=ModerationAction(action),
+        active=True,
+    )
+    db.add(rule)
+    await db.commit()
+    await db.refresh(rule)
+    return HTMLResponse(_render_rule_row(rule))
+
+
+@router.post("/rules/{rule_id}/approve", response_class=HTMLResponse)
+async def approve_rule(
+    rule_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(ModerationRule).where(ModerationRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    rule.proposed = False
+    rule.active = True
+    await db.commit()
+    await db.refresh(rule)
+    # Return empty to remove from proposed table; it'll show up on next full page load
+    return HTMLResponse("")
+
+
+@router.post("/rules/{rule_id}/toggle", response_class=HTMLResponse)
+async def toggle_rule(
+    rule_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(ModerationRule).where(ModerationRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    rule.active = not rule.active
+    await db.commit()
+    await db.refresh(rule)
+    return HTMLResponse(_render_rule_row(rule))
+
+
+@router.delete("/rules/{rule_id}/delete", response_class=HTMLResponse)
+async def delete_rule_html(
+    rule_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(ModerationRule).where(ModerationRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    await db.delete(rule)
+    await db.commit()
+    return HTMLResponse("")
+
+
+# ---------------------------------------------------------------------------
+# User management (HTML + JSON)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/users", response_class=HTMLResponse)
+async def users_page(
+    request: Request,
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    stmt = select(User)
+
+    if cursor:
+        try:
+            cursor_id = UUID(cursor)
+            cursor_row = await db.scalar(
+                select(User.created_at).where(User.id == cursor_id)
+            )
+            if cursor_row is not None:
+                stmt = stmt.where(
+                    (User.created_at < cursor_row)
+                    | ((User.created_at == cursor_row) & (User.id < cursor_id))
+                )
+        except (ValueError, TypeError):
+            pass
+
+    stmt = stmt.order_by(User.created_at.desc(), User.id.desc()).limit(limit + 1)
+
+    result = await db.execute(stmt)
+    users = list(result.scalars().all())
+
+    next_cursor: str | None = None
+    if len(users) > limit:
+        users = users[:limit]
+        next_cursor = str(users[-1].id)
+
+    return templates.TemplateResponse(
+        "admin/users.html",
+        {
+            "request": request,
+            "users": users,
+            "next_cursor": next_cursor,
+            "prev_cursor": cursor,
+        },
+    )
+
+
+def _render_user_row(user: User) -> str:
+    """Return an HTML table row for HTMX swap."""
+    role_class = f"status-{user.role.value}"
+    banned_badge = (
+        '<span class="status-badge status-hidden">banned</span>'
+        if user.is_banned
+        else '<span class="status-badge status-visible">active</span>'
+    )
+    created = user.created_at.strftime("%Y-%m-%d %H:%M")
+
+    role_options = "".join(
+        f'<option value="{r.value}" {"selected" if r == user.role else ""}>{r.value}</option>'
+        for r in UserRole
+    )
+
+    return f"""<tr id="user-{user.id}">
+  <td>{user.username}</td>
+  <td>{user.email}</td>
+  <td>
+    <select
+      hx-patch="/admin/users/{user.id}/role"
+      hx-target="#user-{user.id}"
+      hx-swap="outerHTML"
+      hx-include="this"
+      name="role"
+      class="role-select"
+    >{role_options}</select>
+  </td>
+  <td>{banned_badge}</td>
+  <td class="nowrap">{created}</td>
+</tr>"""
+
+
+@router.patch("/users/{user_id}/role", response_class=HTMLResponse)
+async def update_user_role(
+    user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    form_data = await request.form()
+    new_role = form_data.get("role")
+    if new_role and new_role in {r.value for r in UserRole}:
+        user.role = UserRole(new_role)
+        await db.commit()
+        await db.refresh(user)
+
+    return HTMLResponse(_render_user_row(user))
+
+
+# ---------------------------------------------------------------------------
+# Moderation log viewer (HTML)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/log", response_class=HTMLResponse)
+async def moderation_log_page(
+    request: Request,
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    stmt = (
+        select(ModerationLog)
+        .options(selectinload(ModerationLog.comment))
+    )
+
+    if cursor:
+        try:
+            cursor_id = UUID(cursor)
+            cursor_row = await db.scalar(
+                select(ModerationLog.created_at).where(ModerationLog.id == cursor_id)
+            )
+            if cursor_row is not None:
+                stmt = stmt.where(
+                    (ModerationLog.created_at < cursor_row)
+                    | ((ModerationLog.created_at == cursor_row) & (ModerationLog.id < cursor_id))
+                )
+        except (ValueError, TypeError):
+            pass
+
+    stmt = stmt.order_by(ModerationLog.created_at.desc(), ModerationLog.id.desc()).limit(limit + 1)
+
+    result = await db.execute(stmt)
+    entries = list(result.scalars().all())
+
+    next_cursor: str | None = None
+    if len(entries) > limit:
+        entries = entries[:limit]
+        next_cursor = str(entries[-1].id)
+
+    return templates.TemplateResponse(
+        "admin/log.html",
+        {
+            "request": request,
+            "entries": entries,
+            "next_cursor": next_cursor,
+            "prev_cursor": cursor,
+        },
+    )

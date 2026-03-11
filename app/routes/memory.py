@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_agent_user
@@ -42,7 +43,10 @@ async def list_memories(
     _user: User = Depends(get_agent_user),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryListResponse:
-    stmt = select(Memory)
+    now = datetime.now(timezone.utc)
+    stmt = select(Memory).where(
+        or_(Memory.expires_at.is_(None), Memory.expires_at > now)
+    )
 
     if category is not None:
         stmt = stmt.where(Memory.category == category)
@@ -97,6 +101,19 @@ async def search_memories(
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
+
+@router.get("/{memory_id}", response_model=MemoryResponse)
+async def get_memory(
+    memory_id: uuid.UUID,
+    _user: User = Depends(get_agent_user),
+    db: AsyncSession = Depends(get_db),
+) -> MemoryResponse:
+    result = await db.execute(select(Memory).where(Memory.id == memory_id))
+    memory = result.scalar_one_or_none()
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return MemoryResponse.model_validate(memory)
+
 
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_memory(

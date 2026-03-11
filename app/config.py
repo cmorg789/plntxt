@@ -14,8 +14,6 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 1 week
 
-    MEDIA_STORAGE_PATH: str = "./media"
-
     ANTHROPIC_API_KEY: str = ""
     APP_BASE_URL: str = "http://localhost:8000"
 

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Moderation Rules — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-rules">
+  <h1>Moderation Rules</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/log">Moderation Log</a>
+    <a href="/admin/rules" class="active">Rules</a>
+    <a href="/admin/users">Users</a>
+    <a href="/admin/config">Config</a>
+  </nav>
+
+  {% if proposed_rules %}
+  <section class="rules-proposed">
+    <h2>Proposed by Agent</h2>
+    <p class="rules-proposed-hint">The moderator agent suggested these rules based on patterns it observed. Approve to activate or reject to discard.</p>
+    <table class="moderation-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Value</th>
+          <th>Action</th>
+          <th>Reason</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="proposed-list">
+        {% for rule in proposed_rules %}
+        <tr id="rule-{{ rule.id }}">
+          <td><span class="status-badge">{{ rule.rule_type.value }}</span></td>
+          <td><code>{{ rule.value }}</code></td>
+          <td><span class="status-badge status-{{ rule.action.value }}">{{ rule.action.value }}</span></td>
+          <td class="comment-body">{{ rule.proposed_reason or '' }}</td>
+          <td class="nowrap">{{ rule.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="actions nowrap">
+            <button
+              hx-post="/admin/rules/{{ rule.id }}/approve"
+              hx-target="#rule-{{ rule.id }}"
+              hx-swap="outerHTML"
+              class="btn btn-approve btn-small"
+            >Approve</button>
+            <button
+              hx-delete="/admin/rules/{{ rule.id }}/delete"
+              hx-target="#rule-{{ rule.id }}"
+              hx-swap="outerHTML"
+              class="btn btn-hide btn-small"
+            >Reject</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  <section class="rules-create">
+    <h2>Add Rule</h2>
+    <form hx-post="/admin/rules/create" hx-target="#rules-list" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()">
+      <input type="hidden" name="_csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
+      <div class="rule-form-row">
+        <div class="config-field">
+          <label for="rule-type">Type</label>
+          <select id="rule-type" name="rule_type">
+            <option value="keyword">Keyword</option>
+            <option value="pattern">Pattern (regex)</option>
+          </select>
+        </div>
+        <div class="config-field" style="flex: 2">
+          <label for="rule-value">Value</label>
+          <input id="rule-value" name="value" type="text" required placeholder="e.g. spam-word or \bphishing\b">
+        </div>
+        <div class="config-field">
+          <label for="rule-action">Action</label>
+          <select id="rule-action" name="action">
+            <option value="hide">Hide</option>
+            <option value="flag">Flag</option>
+
+            <option value="ban">Ban</option>
+          </select>
+        </div>
+        <div class="config-field" style="align-self: flex-end">
+          <button type="submit" class="btn">Add Rule</button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rules-list">
+    <h2>Active Rules</h2>
+    <table class="moderation-table" id="rules-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Value</th>
+          <th>Action</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rules-list">
+        {% for rule in rules %}
+        <tr id="rule-{{ rule.id }}">
+          <td><span class="status-badge">{{ rule.rule_type.value }}</span></td>
+          <td><code>{{ rule.value }}</code></td>
+          <td><span class="status-badge status-{{ rule.action.value }}">{{ rule.action.value }}</span></td>
+          <td>
+            {% if rule.active %}
+            <span class="status-badge status-visible">active</span>
+            {% else %}
+            <span class="status-badge status-hidden">inactive</span>
+            {% endif %}
+          </td>
+          <td class="nowrap">{{ rule.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="actions nowrap">
+            {% if rule.active %}
+            <button
+              hx-post="/admin/rules/{{ rule.id }}/toggle"
+              hx-target="#rule-{{ rule.id }}"
+              hx-swap="outerHTML"
+              class="btn btn-hide btn-small"
+            >Disable</button>
+            {% else %}
+            <button
+              hx-post="/admin/rules/{{ rule.id }}/toggle"
+              hx-target="#rule-{{ rule.id }}"
+              hx-swap="outerHTML"
+              class="btn btn-approve btn-small"
+            >Enable</button>
+            {% endif %}
+            <button
+              hx-delete="/admin/rules/{{ rule.id }}/delete"
+              hx-target="#rule-{{ rule.id }}"
+              hx-swap="outerHTML"
+              hx-confirm="Delete this rule?"
+              class="btn btn-hide btn-small"
+            >Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not rules %}
+    <p class="empty">No moderation rules configured.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

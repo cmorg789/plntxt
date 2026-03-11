@@ -15,7 +15,6 @@ class AuthorType(str, enum.Enum):
 class CommentStatus(str, enum.Enum):
     VISIBLE = "visible"
     HIDDEN = "hidden"
-    SHADOWED = "shadowed"
     FLAGGED = "flagged"
 
 

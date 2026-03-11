@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Moderation Log — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-moderation">
+  <h1>Moderation Log</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/log" class="active">Moderation Log</a>
+    <a href="/admin/rules">Rules</a>
+    <a href="/admin/users">Users</a>
+    <a href="/admin/config">Config</a>
+  </nav>
+
+  {% if entries %}
+  <table class="moderation-table">
+    <thead>
+      <tr>
+        <th>Action</th>
+        <th>Comment</th>
+        <th>Reason</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr>
+        <td><span class="status-badge status-{{ entry.action.value }}">{{ entry.action.value }}</span></td>
+        <td class="comment-body">
+          {% if entry.comment %}
+          {{ entry.comment.body[:120] }}{% if entry.comment.body|length > 120 %}&hellip;{% endif %}
+          {% else %}
+          <em>deleted</em>
+          {% endif %}
+        </td>
+        <td>{{ entry.reason or '' }}</td>
+        <td class="nowrap">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="pagination">
+    {% if prev_cursor %}
+    <a href="/admin/log?cursor={{ prev_cursor }}&direction=prev" class="btn btn-small">Previous</a>
+    {% endif %}
+    {% if next_cursor %}
+    <a href="/admin/log?cursor={{ next_cursor }}" class="btn btn-small">Next</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No moderation actions recorded yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

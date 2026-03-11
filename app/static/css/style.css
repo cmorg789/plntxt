@@ -525,7 +525,6 @@ a:hover {
 .comment-status.status-visible { color: var(--success); border-color: var(--success); }
 .comment-status.status-flagged { color: var(--warn-text); border-color: var(--warn-text); }
 .comment-status.status-hidden { color: var(--text-secondary); border-color: var(--border); }
-.comment-status.status-shadowed { color: var(--text-secondary); border-color: var(--border); }
 
 .comment.comment-hidden {
     opacity: 0.5;
@@ -899,7 +898,7 @@ a:hover {
 .status-flagged { background: var(--warn-bg); color: var(--warn-text); }
 .status-visible { background: var(--success-bg); color: var(--success); }
 .status-hidden { background: var(--error-bg); color: var(--error); }
-.status-shadowed { background: var(--bg-surface); color: var(--text-secondary); }
+
 
 .actions {
     display: flex;
@@ -996,6 +995,76 @@ a:hover {
 
 .config-section .btn {
     margin-top: var(--space-sm);
+}
+
+/* --- Rules --- */
+
+.admin-rules {
+    max-width: var(--admin-max-width);
+    margin: 0 auto;
+}
+
+.rules-create {
+    margin-bottom: var(--space-xl);
+    padding: var(--space-lg);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+}
+
+.rules-create h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--space-md);
+}
+
+.rules-proposed {
+    margin-bottom: var(--space-xl);
+    padding: var(--space-lg);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--text-secondary);
+}
+
+.rules-proposed h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--space-xs);
+}
+
+.rules-proposed-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-md);
+}
+
+.rule-form-row {
+    display: flex;
+    gap: var(--space-md);
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.rule-form-row .config-field {
+    flex: 1;
+    min-width: 140px;
+}
+
+.config-field select {
+    width: 100%;
+    font-family: var(--font);
+    font-size: 0.85rem;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+.config-field select:focus {
+    outline: none;
+    border-color: var(--text-secondary);
 }
 
 /* --- Hamburger --- */

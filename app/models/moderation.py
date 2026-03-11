@@ -9,8 +9,8 @@ from app.models.base import Base, UUIDMixin
 
 
 class ModerationAction(str, enum.Enum):
+    APPROVE = "approve"
     HIDE = "hide"
-    SHADOW = "shadow"
     FLAG = "flag"
     BAN = "ban"
 
@@ -41,6 +41,8 @@ class ModerationRule(UUIDMixin, Base):
     value: Mapped[str] = mapped_column(String(500))
     action: Mapped[ModerationAction]
     active: Mapped[bool] = mapped_column(default=True)
+    proposed: Mapped[bool] = mapped_column(default=False)
+    proposed_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

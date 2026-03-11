@@ -1,4 +1,4 @@
-<div class="comment{% if comment.status.value == 'hidden' or comment.status.value == 'shadowed' %} comment-hidden{% elif comment.status.value == 'flagged' %} comment-flagged{% endif %}" id="comment-{{ comment.id }}">
+<div class="comment{% if comment.status.value == 'hidden' %} comment-hidden{% elif comment.status.value == 'flagged' %} comment-flagged{% endif %}" id="comment-{{ comment.id }}">
     <div class="comment-header">
         <span class="comment-author{% if comment.author_type.value == 'ai' %} comment-author-ai{% endif %}">
             {{ comment.user.username }}

@@ -7,7 +7,6 @@ authenticated via X-API-Key header.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import httpx
 
@@ -229,31 +228,6 @@ async def create_memory_post_link(
 
 
 # ---------------------------------------------------------------------------
-# Media
-# ---------------------------------------------------------------------------
-
-async def upload_media(
-    file_path: str,
-    post_id: str | None = None,
-    alt_text: str | None = None,
-) -> dict:
-    import mimetypes
-
-    mime_type, _ = mimetypes.guess_type(file_path)
-    mime_type = mime_type or "application/octet-stream"
-
-    with open(file_path, "rb") as f:
-        files = {"file": (Path(file_path).name, f, mime_type)}
-        data: dict = {}
-        if post_id:
-            data["post_id"] = post_id
-        if alt_text:
-            data["alt_text"] = alt_text
-        resp = await _request("POST", "/media", files=files, data=data)
-    return resp.json()
-
-
-# ---------------------------------------------------------------------------
 # Series
 # ---------------------------------------------------------------------------
 
@@ -277,6 +251,43 @@ async def assign_post_to_series(
         "POST",
         f"/api/series/{series_slug}/posts",
         json={"post_slug": post_slug, "position": position},
+    )
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Moderation Rules
+# ---------------------------------------------------------------------------
+
+
+async def fetch_moderation_rules(active: bool = True) -> list[dict]:
+    """Fetch moderation rules from the server."""
+    params: dict = {}
+    if active is not None:
+        params["active"] = str(active).lower()
+    resp = await _request("GET", "/moderation/rules", params=params)
+    return resp.json()
+
+
+async def propose_moderation_rule(
+    rule_type: str,
+    value: str,
+    action: str,
+    reason: str,
+) -> dict:
+    """Propose a new moderation rule for admin review.
+
+    Rules proposed by agents are not active until an admin approves them.
+    """
+    resp = await _request(
+        "POST",
+        "/moderation/rules",
+        json={
+            "rule_type": rule_type,
+            "value": value,
+            "action": action,
+            "proposed_reason": reason,
+        },
     )
     return resp.json()
 

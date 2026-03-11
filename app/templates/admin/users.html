@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Users — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-moderation">
+  <h1>Users</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/log">Moderation Log</a>
+    <a href="/admin/rules">Rules</a>
+    <a href="/admin/users" class="active">Users</a>
+    <a href="/admin/config">Config</a>
+  </nav>
+
+  {% if users %}
+  <table class="moderation-table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Joined</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr id="user-{{ user.id }}">
+        <td>{{ user.username }}</td>
+        <td>{{ user.email }}</td>
+        <td>
+          <select
+            hx-patch="/admin/users/{{ user.id }}/role"
+            hx-target="#user-{{ user.id }}"
+            hx-swap="outerHTML"
+            hx-include="this"
+            name="role"
+            class="role-select"
+          >
+            {% for role in ['user', 'admin', 'agent'] %}
+            <option value="{{ role }}" {% if user.role.value == role %}selected{% endif %}>{{ role }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          {% if user.is_banned %}
+          <span class="status-badge status-hidden">banned</span>
+          {% else %}
+          <span class="status-badge status-visible">active</span>
+          {% endif %}
+        </td>
+        <td class="nowrap">{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="pagination">
+    {% if prev_cursor %}
+    <a href="/admin/users?cursor={{ prev_cursor }}&direction=prev" class="btn btn-small">Previous</a>
+    {% endif %}
+    {% if next_cursor %}
+    <a href="/admin/users?cursor={{ next_cursor }}" class="btn btn-small">Next</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No users found.</p>
+  {% endif %}
+</div>
+{% endblock %}

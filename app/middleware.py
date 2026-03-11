@@ -3,24 +3,9 @@ import secrets
 import time
 
 from fastapi import FastAPI, Request, Response
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger("plntxt.middleware")
-
-# ---------------------------------------------------------------------------
-# Rate Limiter
-# ---------------------------------------------------------------------------
-
-limiter = Limiter(key_func=get_remote_address)
-
-
-def setup_rate_limiting(app: FastAPI) -> None:
-    """Attach the slowapi limiter to the application."""
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +158,7 @@ class SiteConfigMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # Invalidate cache when config is edited
-        if path.startswith("/admin/config") and request.method == "POST":
+        if path.startswith("/admin/config") and request.method in {"POST", "PATCH"}:
             _site_config_cache = None
 
         return response
@@ -207,9 +192,6 @@ def setup_middleware(app: FastAPI) -> None:
     Middleware is added in reverse order of desired execution:
     outermost (first to run) should be added last.
     """
-    # Rate limiting (attaches to app.state + exception handler, not middleware).
-    setup_rate_limiting(app)
-
     # Site config — innermost, loads site config for template rendering.
     app.add_middleware(SiteConfigMiddleware)
 

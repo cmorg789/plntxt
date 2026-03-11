@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.auth.dependencies import get_admin_user
+from app.auth.dependencies import get_admin_user, get_agent_or_admin
+from app.models.user import UserRole
 from app.db import get_db
 from app.models.moderation import Ban, ModerationLog, ModerationRule
 from app.pagination import decode_cursor, encode_cursor
@@ -66,12 +67,15 @@ async def list_moderation_log(
 @router.get("/rules", response_model=list[ModerationRuleResponse])
 async def list_rules(
     active: bool | None = Query(None),
+    proposed: bool | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    _user: User = Depends(get_agent_or_admin),
 ):
     stmt = select(ModerationRule)
     if active is not None:
         stmt = stmt.where(ModerationRule.active == active)
+    if proposed is not None:
+        stmt = stmt.where(ModerationRule.proposed == proposed)
     stmt = stmt.order_by(ModerationRule.created_at.desc())
 
     result = await db.execute(stmt)
@@ -83,13 +87,17 @@ async def list_rules(
 async def create_rule(
     data: ModerationRuleCreate,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    user: User = Depends(get_agent_or_admin),
 ):
+    # Agents can only propose rules, never create active ones directly
+    is_agent = user.role == UserRole.AGENT
     rule = ModerationRule(
         rule_type=data.rule_type,
         value=data.value,
         action=data.action,
-        active=data.active,
+        active=False if is_agent else data.active,
+        proposed=True if is_agent else data.proposed,
+        proposed_reason=data.proposed_reason,
     )
     db.add(rule)
     await db.commit()

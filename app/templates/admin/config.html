@@ -10,6 +10,14 @@
 <div class="admin-config">
   <h1>Configuration</h1>
 
+  <nav class="admin-nav">
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/log">Moderation Log</a>
+    <a href="/admin/rules">Rules</a>
+    <a href="/admin/users">Users</a>
+    <a href="/admin/config" class="active">Config</a>
+  </nav>
+
   {% if message %}
   <p class="form-success">{{ message }}</p>
   {% endif %}
@@ -28,7 +36,7 @@
       {% for field_key, field_value in entry.value.items() %}
       <div class="config-field">
         <label for="field-{{ key }}-{{ field_key }}">{{ field_key | replace('_', ' ') }}</label>
-        {% if field_value is string and field_value | length > 80 %}
+        {% if field_value is string and field_value | length > 40 %}
         <textarea id="field-{{ key }}-{{ field_key }}"
                   name="field_{{ field_key }}"
                   rows="4">{{ field_value }}</textarea>

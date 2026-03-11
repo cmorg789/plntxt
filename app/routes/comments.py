@@ -15,6 +15,7 @@ from app.auth.dependencies import (
 )
 from app.db import get_db
 from app.models.comment import AuthorType, Comment, CommentStatus, ResponseStatus
+from app.models.moderation import ModerationAction, ModerationLog
 from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post
 from app.models.schemas.comments import (
@@ -186,9 +187,27 @@ async def update_comment(
     if comment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
 
+    old_status = comment.status
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(comment, field, value)
+
+    # Log moderation action when status changes
+    if "status" in update_data and update_data["status"] != old_status:
+        new_status = update_data["status"]
+        if new_status == CommentStatus.HIDDEN:
+            action = ModerationAction.HIDE
+        elif new_status == CommentStatus.FLAGGED:
+            action = ModerationAction.FLAG
+        else:
+            action = ModerationAction.APPROVE
+        source = "agent" if user.role == UserRole.AGENT else "admin"
+        log_entry = ModerationLog(
+            comment_id=comment.id,
+            action=action,
+            reason=f"{source.capitalize()} changed status from {old_status.value} to {new_status.value}",
+        )
+        db.add(log_entry)
 
     await db.commit()
     await db.refresh(comment)

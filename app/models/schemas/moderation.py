@@ -30,6 +30,8 @@ class ModerationRuleCreate(BaseModel):
     value: str
     action: ModerationAction
     active: bool = True
+    proposed: bool = False
+    proposed_reason: str | None = None
 
 
 class ModerationRuleUpdate(BaseModel):
@@ -46,6 +48,8 @@ class ModerationRuleResponse(BaseModel):
     value: str
     action: ModerationAction
     active: bool
+    proposed: bool
+    proposed_reason: str | None
     created_at: datetime
 
 
