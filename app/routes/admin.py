@@ -25,11 +25,7 @@ templates = Jinja2Templates(directory="app/templates")
 # ---------------------------------------------------------------------------
 
 
-@router.get("/stats")
-async def get_stats(
-    db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
-):
+async def _collect_stats(db: AsyncSession) -> dict:
     post_count = await db.scalar(select(func.count()).select_from(Post))
     comment_count = await db.scalar(select(func.count()).select_from(Comment))
     pending_comments = await db.scalar(
@@ -55,67 +51,50 @@ async def get_stats(
     }
 
 
-# ---------------------------------------------------------------------------
-# Dashboard (HTML)
-# ---------------------------------------------------------------------------
-
-
-@router.get("", response_class=HTMLResponse)
-async def dashboard(
+@router.get("/sidebar", response_class=HTMLResponse)
+async def sidebar_partial(
     request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_admin_user),
 ):
-    # Gather stats
-    post_count = await db.scalar(select(func.count()).select_from(Post))
-    comment_count = await db.scalar(select(func.count()).select_from(Comment))
-    pending_comments = await db.scalar(
-        select(func.count())
-        .select_from(Comment)
-        .where(Comment.response_status == ResponseStatus.PENDING)
-    )
-    flagged_count = await db.scalar(
-        select(func.count())
-        .select_from(Comment)
-        .where(Comment.status == CommentStatus.FLAGGED)
-    )
-    user_count = await db.scalar(select(func.count()).select_from(User))
-    memory_count = await db.scalar(select(func.count()).select_from(Memory))
+    stats = await _collect_stats(db)
 
-    stats = {
-        "post_count": post_count,
-        "comment_count": comment_count,
-        "pending_comments": pending_comments,
-        "flagged_comments": flagged_count,
-        "user_count": user_count,
-        "memory_count": memory_count,
-    }
-
-    # Recent posts (last 5)
-    recent_posts_result = await db.execute(
-        select(Post).order_by(Post.created_at.desc()).limit(5)
-    )
-    recent_posts = list(recent_posts_result.scalars().all())
-
-    # Recent flagged comments (last 5) with user and post eagerly loaded
     flagged_result = await db.execute(
         select(Comment)
         .where(Comment.status == CommentStatus.FLAGGED)
         .options(selectinload(Comment.user), selectinload(Comment.post))
         .order_by(Comment.created_at.desc())
-        .limit(5)
+        .limit(10)
     )
     flagged_comments = list(flagged_result.scalars().all())
 
+    pending_result = await db.execute(
+        select(Comment)
+        .where(Comment.response_status.in_([ResponseStatus.PENDING, ResponseStatus.NEEDS_RESPONSE]))
+        .options(selectinload(Comment.user), selectinload(Comment.post))
+        .order_by(Comment.created_at.desc())
+        .limit(10)
+    )
+    pending_comments = list(pending_result.scalars().all())
+
     return templates.TemplateResponse(
-        "admin/dashboard.html",
+        "admin/sidebar.html",
         {
             "request": request,
             "stats": stats,
-            "recent_posts": recent_posts,
             "flagged_comments": flagged_comments,
+            "pending_comments": pending_comments,
         },
     )
+
+
+@router.get("/stats")
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    return await _collect_stats(db)
+
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +184,18 @@ async def _update_comment_status(
     db.add(log_entry)
 
     await db.commit()
-    await db.refresh(comment)
-    return comment
+
+    # Re-query with all relationships needed for template rendering
+    result = await db.execute(
+        select(Comment)
+        .where(Comment.id == comment_id)
+        .options(
+            selectinload(Comment.user),
+            selectinload(Comment.post),
+            selectinload(Comment.replies).selectinload(Comment.user),
+        )
+    )
+    return result.scalar_one()
 
 
 def _render_comment_row(comment: Comment) -> str:
@@ -245,24 +234,84 @@ def _render_comment_row(comment: Comment) -> str:
 </tr>"""
 
 
+def _render_inline_comment(request: Request, comment: Comment, user: User):
+    return templates.TemplateResponse(
+        "posts/_comment.html",
+        {"request": request, "comment": comment, "current_user": user},
+    )
+
+
 @router.post("/comments/{comment_id}/approve", response_class=HTMLResponse)
 async def approve_comment(
     comment_id: UUID,
+    request: Request,
+    source: str = Query("table"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_admin_user),
 ):
     comment = await _update_comment_status(comment_id, CommentStatus.VISIBLE, db)
+    if source == "inline":
+        return _render_inline_comment(request, comment, _user)
+    if source == "sidebar":
+        return HTMLResponse("")
     return HTMLResponse(_render_comment_row(comment))
 
 
 @router.post("/comments/{comment_id}/hide", response_class=HTMLResponse)
 async def hide_comment(
     comment_id: UUID,
+    request: Request,
+    source: str = Query("table"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_admin_user),
 ):
     comment = await _update_comment_status(comment_id, CommentStatus.HIDDEN, db)
+    if source == "inline":
+        return _render_inline_comment(request, comment, _user)
+    if source == "sidebar":
+        return HTMLResponse("")
     return HTMLResponse(_render_comment_row(comment))
+
+
+@router.post("/comments/{comment_id}/flag", response_class=HTMLResponse)
+async def flag_comment(
+    comment_id: UUID,
+    request: Request,
+    source: str = Query("table"),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    comment = await _update_comment_status(comment_id, CommentStatus.FLAGGED, db)
+    if source == "inline":
+        return _render_inline_comment(request, comment, _user)
+    if source == "sidebar":
+        return HTMLResponse("")
+    return HTMLResponse(_render_comment_row(comment))
+
+
+@router.post("/comments/{comment_id}/delete", response_class=HTMLResponse)
+async def delete_comment(
+    comment_id: UUID,
+    source: str = Query("table"),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    result = await db.execute(
+        select(Comment).where(Comment.id == comment_id)
+    )
+    comment = result.scalar_one_or_none()
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    log_entry = ModerationLog(
+        comment_id=comment.id,
+        action=ModerationAction.HIDE,
+        reason="Admin deleted comment",
+    )
+    db.add(log_entry)
+    await db.delete(comment)
+    await db.commit()
+    return HTMLResponse("")
 
 
 # ---------------------------------------------------------------------------
@@ -290,35 +339,40 @@ async def config_page(
 async def config_edit_form(
     key: str,
     request: Request,
-    value: str = Form(...),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_admin_user),
 ):
-    import json as _json
-
     result = await db.execute(select(Config).where(Config.key == key))
     config = result.scalar_one_or_none()
 
     if config is None:
         raise HTTPException(status_code=404, detail="Config key not found")
 
-    try:
-        parsed = _json.loads(value)
-    except _json.JSONDecodeError as e:
-        # Re-render with error
-        all_result = await db.execute(select(Config))
-        configs = {c.key: {"value": c.value, "updated_at": c.updated_at.isoformat()} for c in all_result.scalars().all()}
-        csrf_token = request.cookies.get("csrf_token", "")
-        return templates.TemplateResponse(
-            "admin/config.html",
-            {"request": request, "configs": configs, "csrf_token": csrf_token,
-             "message": None, "error": f"Invalid JSON for '{key}': {e}"},
-        )
+    form_data = await request.form()
 
-    config.value = parsed
+    # Reassemble the JSON object from individual form fields
+    updated = dict(config.value)
+    for field_key, original_value in config.value.items():
+        form_key = f"field_{field_key}"
+        if form_key in form_data:
+            raw = form_data[form_key]
+            # Coerce back to the original type
+            if isinstance(original_value, int):
+                try:
+                    updated[field_key] = int(raw)
+                except (ValueError, TypeError):
+                    updated[field_key] = raw
+            elif isinstance(original_value, float):
+                try:
+                    updated[field_key] = float(raw)
+                except (ValueError, TypeError):
+                    updated[field_key] = raw
+            else:
+                updated[field_key] = raw
+
+    config.value = updated
     await db.commit()
 
-    # Redirect back to config page with success
     from starlette.responses import RedirectResponse as _Redirect
     return _Redirect(url="/admin/config", status_code=302)
 

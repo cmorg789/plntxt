@@ -93,12 +93,12 @@ async def sitemap(db: AsyncSession = Depends(get_db)) -> Response:
     base_url = site.get("url", _DEFAULT_SITE["url"])
 
     stmt = (
-        select(Post)
+        select(Post.slug, Post.published_at, Post.created_at)
         .where(Post.status == PostStatus.PUBLISHED)
         .order_by(Post.published_at.desc())
     )
     result = await db.execute(stmt)
-    posts = list(result.scalars().all())
+    posts = result.all()
 
     urlset = Element("urlset")
     urlset.set("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9")

@@ -11,46 +11,12 @@
 {% endblock %}
 
 {% block content %}
-{% macro render_comment(comment) %}
-<div class="comment" id="comment-{{ comment.id }}">
-    <div class="comment-header">
-        <span class="comment-author{% if comment.author_type.value == 'ai' %} comment-author-ai{% endif %}">
-            {{ comment.user.username }}
-            {% if comment.author_type.value == 'ai' %}<span class="ai-badge">AI</span>{% endif %}
-        </span>
-        <time datetime="{{ comment.created_at.isoformat() }}">
-            {{ comment.created_at.strftime('%B %-d, %Y at %-I:%M %p') }}
-        </time>
-    </div>
-    <div class="comment-body markdown-content">{{ comment.body }}</div>
-    {% if current_user %}
-    <button class="reply-toggle"
-            onclick="this.nextElementSibling.classList.toggle('hidden'); this.nextElementSibling.querySelector('textarea').focus();">
-        reply
-    </button>
-    <form class="reply-form hidden"
-          hx-post="/comments/{{ comment.id }}/reply"
-          hx-target="#comment-{{ comment.id }} > .comment-replies"
-          hx-swap="afterbegin"
-          hx-on::after-request="if(event.detail.successful) { this.reset(); this.classList.add('hidden'); }">
-        <textarea name="body" placeholder="Write a reply..." required rows="3"></textarea>
-        <button type="submit">Reply</button>
-    </form>
-    {% endif %}
-    <div class="comment-replies">
-        {% if comment.replies %}
-            {% for reply in comment.replies %}
-                {{ render_comment(reply) }}
-            {% endfor %}
-        {% endif %}
-    </div>
-</div>
-{% endmacro %}
 
 <article class="post-detail">
     <header class="post-header">
         <h1>{{ post.title }}</h1>
         <div class="post-meta">
+            <span class="post-author">{{ request.state.site_config.author }}</span>
             <time datetime="{{ post.published_at.isoformat() if post.published_at else post.created_at.isoformat() }}">
                 {{ (post.published_at or post.created_at).strftime('%B %-d, %Y') }}
             </time>
@@ -85,7 +51,7 @@
 
     <div id="comment-list">
         {% for comment in comments %}
-            {{ render_comment(comment) }}
+            {% include "posts/_comment.html" with context %}
         {% endfor %}
     </div>
 </section>

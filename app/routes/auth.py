@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr
@@ -9,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.auth.jwt import create_access_token
 from app.auth.passwords import hash_password, verify_password
-from app.config import settings
+from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
 from app.models.session import Session
 from app.models.user import User, UserRole
@@ -50,24 +49,6 @@ class AuthResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_session(user_id: uuid.UUID, token: str) -> Session:
-    return Session(
-        user_id=user_id,
-        token=token,
-        expires_at=datetime.utcnow()
-        + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
-
-
-def _set_session_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        key="session_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -98,10 +79,10 @@ async def register(
     await db.flush()  # populate user.id before creating token
 
     token = create_access_token(user.id)
-    db.add(_build_session(user.id, token))
+    db.add(build_session(user.id, token))
     await db.commit()
 
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
 
     return AuthResponse(
         token=token,
@@ -125,10 +106,10 @@ async def login(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is banned")
 
     token = create_access_token(user.id)
-    db.add(_build_session(user.id, token))
+    db.add(build_session(user.id, token))
     await db.commit()
 
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
 
     return AuthResponse(
         token=token,

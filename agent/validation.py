@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from agent.client import get_anthropic_client, load_agent_config
+from agent.client import get_anthropic_client
 
 logger = logging.getLogger("plntxt.agent.validation")
 
@@ -35,20 +35,19 @@ If UNSAFE, add a brief reason on the next line.\
 async def validate_agent_output(
     prompt: str,
     response: str,
+    model: str = "claude-haiku-4-5-20251001",
 ) -> tuple[bool, str | None]:
     """Validate that an agent's response doesn't appear manipulated.
 
     Args:
         prompt: The original prompt given to the agent.
         response: The agent's response to validate.
+        model: The model to use for validation (resolved once by caller).
 
     Returns:
         Tuple of (is_valid, reason_if_invalid).
     """
     try:
-        config = await load_agent_config()
-        model = config["models"].get("validation", "claude-haiku-4-5-20251001")
-
         client = get_anthropic_client()
         message = await client.messages.create(
             model=model,

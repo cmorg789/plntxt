@@ -45,18 +45,23 @@ async def get_current_user(
     return user
 
 
+async def _get_agent_by_api_key(
+    x_api_key: str | None, db: AsyncSession
+) -> User | None:
+    if x_api_key and x_api_key == settings.AGENT_API_KEY:
+        result = await db.execute(select(User).where(User.role == UserRole.AGENT))
+        return result.scalar_one_or_none()
+    return None
+
+
 async def get_agent_user(
     db: AsyncSession = Depends(get_db),
     x_api_key: str | None = Header(None),
     user: User | None = Depends(get_optional_user),
 ) -> User:
-    # API key auth for agent
-    if x_api_key and x_api_key == settings.AGENT_API_KEY:
-        result = await db.execute(select(User).where(User.role == UserRole.AGENT))
-        agent = result.scalar_one_or_none()
-        if agent:
-            return agent
-    # Fall back to JWT auth
+    agent = await _get_agent_by_api_key(x_api_key, db)
+    if agent:
+        return agent
     if user and user.role == UserRole.AGENT:
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agent access required")
@@ -67,13 +72,9 @@ async def get_agent_or_admin(
     x_api_key: str | None = Header(None),
     user: User | None = Depends(get_optional_user),
 ) -> User:
-    # API key auth for agent
-    if x_api_key and x_api_key == settings.AGENT_API_KEY:
-        result = await db.execute(select(User).where(User.role == UserRole.AGENT))
-        agent = result.scalar_one_or_none()
-        if agent:
-            return agent
-    # JWT auth for agent or admin
+    agent = await _get_agent_by_api_key(x_api_key, db)
+    if agent:
+        return agent
     if user and user.role in (UserRole.AGENT, UserRole.ADMIN):
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agent or admin access required")

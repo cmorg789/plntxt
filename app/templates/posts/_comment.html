@@ -1,0 +1,75 @@
+<div class="comment{% if comment.status.value == 'hidden' or comment.status.value == 'shadowed' %} comment-hidden{% elif comment.status.value == 'flagged' %} comment-flagged{% endif %}" id="comment-{{ comment.id }}">
+    <div class="comment-header">
+        <span class="comment-author{% if comment.author_type.value == 'ai' %} comment-author-ai{% endif %}">
+            {{ comment.user.username }}
+            {% if comment.author_type.value == 'ai' %}<span class="ai-badge">AI</span>{% endif %}
+        </span>
+        <time datetime="{{ comment.created_at.isoformat() }}">
+            {{ comment.created_at.strftime('%B %-d, %Y at %-I:%M %p') }}
+        </time>
+        {% if current_user and current_user.role.value == 'admin' %}
+        <span class="comment-status status-{{ comment.status.value }}">{{ comment.status.value }}</span>
+        {% endif %}
+    </div>
+    <div class="comment-body markdown-content">{{ comment.body }}</div>
+    {% if current_user %}
+    <form class="reply-form hidden"
+          hx-post="/comments/{{ comment.id }}/reply"
+          hx-target="#comment-{{ comment.id }} > .comment-replies"
+          hx-swap="afterbegin"
+          hx-on::after-request="if(event.detail.successful) { this.reset(); this.classList.add('hidden'); this.previousElementSibling.querySelector('.reply-toggle').classList.remove('hidden'); }">
+        <textarea name="body" placeholder="Write a reply..." required rows="3"></textarea>
+        <div class="reply-form-actions">
+            <button type="submit">Reply</button>
+            <button type="button" class="reply-cancel"
+                    onclick="var form = this.closest('.reply-form'); form.classList.add('hidden'); form.reset(); form.previousElementSibling.querySelector('.reply-toggle').classList.remove('hidden');">cancel</button>
+        </div>
+    </form>
+    {% endif %}
+    <div class="comment-actions">
+        {% if current_user %}
+        <button class="reply-toggle"
+                onclick="this.classList.add('hidden'); this.closest('.comment-actions').previousElementSibling.classList.remove('hidden'); this.closest('.comment-actions').previousElementSibling.querySelector('textarea').focus();">
+            reply
+        </button>
+        {% endif %}
+        {% if current_user and current_user.role.value == 'admin' %}
+        <span class="mod-actions">
+            {% if comment.status.value != 'visible' %}
+            <button class="mod-btn mod-approve"
+                    hx-post="/admin/comments/{{ comment.id }}/approve?source=inline"
+                    hx-target="#comment-{{ comment.id }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Approve this comment?">approve</button>
+            {% endif %}
+            {% if comment.status.value != 'flagged' %}
+            <button class="mod-btn mod-flag"
+                    hx-post="/admin/comments/{{ comment.id }}/flag?source=inline"
+                    hx-target="#comment-{{ comment.id }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Flag this comment?">flag</button>
+            {% endif %}
+            {% if comment.status.value != 'hidden' %}
+            <button class="mod-btn mod-hide"
+                    hx-post="/admin/comments/{{ comment.id }}/hide?source=inline"
+                    hx-target="#comment-{{ comment.id }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Hide this comment?">hide</button>
+            {% endif %}
+            <button class="mod-btn mod-delete"
+                    hx-post="/admin/comments/{{ comment.id }}/delete?source=inline"
+                    hx-target="#comment-{{ comment.id }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Permanently delete this comment? This cannot be undone.">delete</button>
+        </span>
+        {% endif %}
+    </div>
+    <div class="comment-replies">
+        {% if comment.replies %}
+            {% for reply in comment.replies %}
+                {% set comment = reply %}
+                {% include "posts/_comment.html" with context %}
+            {% endfor %}
+        {% endif %}
+    </div>
+</div>

@@ -12,7 +12,7 @@ import logging
 import re
 
 from agent.client import get_anthropic_client, load_agent_config
-from agent.tools import get_pending_comments, moderate_comment
+from agent.tools import fetch_all_pending_comments, moderate_comment
 
 logger = logging.getLogger("plntxt.agent.moderator")
 
@@ -148,6 +148,12 @@ CLASSIFICATION_TO_RESPONSE = {
     "HIDE": "skip",            # hidden comments don't need a response
 }
 
+CLASSIFICATION_TO_STAT = {
+    "APPROVE": "approved",
+    "FLAG": "flagged",
+    "HIDE": "hidden",
+}
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -160,16 +166,7 @@ async def run_moderator() -> None:
     config = await load_agent_config()
     model = config["models"].get("moderator", "claude-haiku-4-5-20251001")
 
-    # Fetch all pending comments
-    all_comments = []
-    cursor = None
-    while True:
-        result = await get_pending_comments(cursor=cursor, limit=20)
-        items = result.get("items", [])
-        all_comments.extend(items)
-        cursor = result.get("next_cursor")
-        if not cursor or not items:
-            break
+    all_comments = await fetch_all_pending_comments()
 
     if not all_comments:
         logger.info("No pending comments to moderate")
@@ -220,7 +217,7 @@ async def run_moderator() -> None:
                 status=new_status,
                 response_status=new_response,
             )
-            stats[new_status.rstrip("d") + "d" if new_status != "visible" else "approved"] += 1
+            stats[CLASSIFICATION_TO_STAT[classification]] += 1
 
         except Exception:
             logger.exception("Error moderating comment %s", comment_id)

@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select
@@ -7,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_agent_user
 from app.db import get_db
-from app.models.memory import Memory, MemoryLink, MemoryPostLink
+from app.models.memory import Memory, MemoryCategory, MemoryLink, MemoryPostLink
+from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post
 from app.models.schemas.memory import (
     MemoryCreate,
@@ -28,14 +28,6 @@ router = APIRouter(prefix="/memory", tags=["memory"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _encode_cursor(created_at: datetime, id: uuid.UUID) -> str:
-    return f"{created_at.isoformat()}_{id}"
-
-
-def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
-    ts_str, id_str = cursor.rsplit("_", 1)
-    return datetime.fromisoformat(ts_str), uuid.UUID(id_str)
-
 
 # ---------------------------------------------------------------------------
 # List / Search
@@ -43,7 +35,7 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 @router.get("", response_model=MemoryListResponse)
 async def list_memories(
-    category: str | None = None,
+    category: MemoryCategory | None = None,
     tag: str | None = None,
     cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
@@ -59,7 +51,7 @@ async def list_memories(
         stmt = stmt.where(Memory.tags.any(tag))
 
     if cursor is not None:
-        cursor_ts, cursor_id = _decode_cursor(cursor)
+        cursor_ts, cursor_id = decode_cursor(cursor)
         stmt = stmt.where(
             (Memory.created_at < cursor_ts)
             | ((Memory.created_at == cursor_ts) & (Memory.id < cursor_id))
@@ -74,7 +66,7 @@ async def list_memories(
     if len(rows) > limit:
         rows = rows[:limit]
         last = rows[-1]
-        next_cursor = _encode_cursor(last.created_at, last.id)
+        next_cursor = encode_cursor(last.created_at, last.id)
 
     return MemoryListResponse(
         items=[MemoryResponse.model_validate(r) for r in rows],

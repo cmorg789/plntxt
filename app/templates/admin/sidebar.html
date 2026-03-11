@@ -1,0 +1,76 @@
+<div class="sidebar-section">
+  <h3>Overview</h3>
+  <div class="sidebar-stats">
+    <div class="sidebar-stat">
+      <span class="sidebar-stat-value">{{ stats.post_count }}</span>
+      <span class="sidebar-stat-label">posts</span>
+    </div>
+    <div class="sidebar-stat">
+      <span class="sidebar-stat-value">{{ stats.comment_count }}</span>
+      <span class="sidebar-stat-label">comments</span>
+    </div>
+    <div class="sidebar-stat">
+      <span class="sidebar-stat-value">{{ stats.user_count }}</span>
+      <span class="sidebar-stat-label">users</span>
+    </div>
+    <div class="sidebar-stat">
+      <span class="sidebar-stat-value">{{ stats.memory_count }}</span>
+      <span class="sidebar-stat-label">memories</span>
+    </div>
+  </div>
+</div>
+
+{% if flagged_comments %}
+<div class="sidebar-section">
+  <h3>Flagged <span class="sidebar-count">{{ stats.flagged_comments }}</span></h3>
+  <ul class="sidebar-queue">
+    {% for comment in flagged_comments %}
+    <li class="sidebar-item" id="sidebar-flagged-{{ comment.id }}">
+      <div class="sidebar-item-body">{{ comment.body[:120] }}{% if comment.body|length > 120 %}&hellip;{% endif %}</div>
+      <div class="sidebar-item-meta">
+        {{ comment.user.username }}
+        {% if comment.post %} on <a href="/posts/{{ comment.post.slug }}">{{ comment.post.title[:30] }}{% if comment.post.title|length > 30 %}&hellip;{% endif %}</a>{% endif %}
+      </div>
+      <div class="sidebar-item-actions">
+        <button class="btn btn-approve btn-small"
+                hx-post="/admin/comments/{{ comment.id }}/approve?source=sidebar"
+                hx-target="#sidebar-flagged-{{ comment.id }}"
+                hx-swap="outerHTML">approve</button>
+        <button class="btn btn-hide btn-small"
+                hx-post="/admin/comments/{{ comment.id }}/hide?source=sidebar"
+                hx-target="#sidebar-flagged-{{ comment.id }}"
+                hx-swap="outerHTML">hide</button>
+        <button class="btn btn-delete btn-small"
+                hx-post="/admin/comments/{{ comment.id }}/delete?source=sidebar"
+                hx-target="#sidebar-flagged-{{ comment.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Permanently delete this comment?">delete</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if pending_comments %}
+<div class="sidebar-section">
+  <h3>Pending Response <span class="sidebar-count">{{ stats.pending_comments }}</span></h3>
+  <ul class="sidebar-queue">
+    {% for comment in pending_comments %}
+    <li class="sidebar-item">
+      <div class="sidebar-item-body">{{ comment.body[:120] }}{% if comment.body|length > 120 %}&hellip;{% endif %}</div>
+      <div class="sidebar-item-meta">
+        {{ comment.user.username }}
+        {% if comment.post %} on <a href="/posts/{{ comment.post.slug }}">{{ comment.post.title[:30] }}{% if comment.post.title|length > 30 %}&hellip;{% endif %}</a>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if not flagged_comments and not pending_comments %}
+<div class="sidebar-section">
+  <p class="sidebar-empty">Nothing to review.</p>
+</div>
+{% endif %}

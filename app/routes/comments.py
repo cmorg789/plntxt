@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -16,6 +15,7 @@ from app.auth.dependencies import (
 )
 from app.db import get_db
 from app.models.comment import AuthorType, Comment, CommentStatus, ResponseStatus
+from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post
 from app.models.schemas.comments import (
     CommentCreate,
@@ -70,14 +70,6 @@ def _comment_to_tree(comment: Comment) -> CommentTreeResponse:
         replies=[_comment_to_tree(r) for r in visible_replies],
     )
 
-
-def _cursor_encode(comment: Comment) -> str:
-    return f"{comment.created_at.isoformat()}_{comment.id}"
-
-
-def _cursor_decode(cursor: str) -> tuple[datetime, uuid.UUID]:
-    ts_str, id_str = cursor.rsplit("_", 1)
-    return datetime.fromisoformat(ts_str), uuid.UUID(id_str)
 
 
 async def _get_post_by_slug(slug: str, db: AsyncSession) -> Post:
@@ -222,7 +214,7 @@ async def get_pending_comments(
     )
 
     if cursor:
-        cursor_ts, cursor_id = _cursor_decode(cursor)
+        cursor_ts, cursor_id = decode_cursor(cursor)
         query = query.where(
             (Comment.created_at > cursor_ts)
             | ((Comment.created_at == cursor_ts) & (Comment.id > cursor_id))
@@ -234,7 +226,7 @@ async def get_pending_comments(
     next_cursor = None
     if len(comments) > limit:
         comments = comments[:limit]
-        next_cursor = _cursor_encode(comments[-1])
+        next_cursor = encode_cursor(comments[-1].created_at, comments[-1].id)
 
     return PendingCommentsResponse(
         items=[_comment_to_response(c) for c in comments],
@@ -258,7 +250,7 @@ async def get_flagged_comments(
     )
 
     if cursor:
-        cursor_ts, cursor_id = _cursor_decode(cursor)
+        cursor_ts, cursor_id = decode_cursor(cursor)
         query = query.where(
             (Comment.created_at > cursor_ts)
             | ((Comment.created_at == cursor_ts) & (Comment.id > cursor_id))
@@ -270,7 +262,7 @@ async def get_flagged_comments(
     next_cursor = None
     if len(comments) > limit:
         comments = comments[:limit]
-        next_cursor = _cursor_encode(comments[-1])
+        next_cursor = encode_cursor(comments[-1].created_at, comments[-1].id)
 
     return PendingCommentsResponse(
         items=[_comment_to_response(c) for c in comments],

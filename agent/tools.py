@@ -7,11 +7,15 @@ authenticated via X-API-Key header.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import httpx
 
 BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
 API_KEY = os.getenv("AGENT_API_KEY", "change-me")
+
+# Module-level client for connection pooling across requests
+_shared_client: httpx.AsyncClient | None = None
 
 
 class AgentAPIError(Exception):
@@ -23,17 +27,20 @@ class AgentAPIError(Exception):
         super().__init__(f"API error {status_code}: {message}")
 
 
-def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        base_url=BASE_URL,
-        headers={"X-API-Key": API_KEY},
-        timeout=30.0,
-    )
+def _get_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            base_url=BASE_URL,
+            headers={"X-API-Key": API_KEY},
+            timeout=30.0,
+        )
+    return _shared_client
 
 
 async def _request(method: str, path: str, **kwargs) -> httpx.Response:
-    async with _client() as client:
-        resp = await client.request(method, path, **kwargs)
+    client = _get_client()
+    resp = await client.request(method, path, **kwargs)
     if resp.status_code >= 400:
         try:
             detail = resp.json().get("detail", resp.text)
@@ -119,6 +126,20 @@ async def moderate_comment(
         payload["response_status"] = response_status
     resp = await _request("PATCH", f"/api/comments/{comment_id}", json=payload)
     return resp.json()
+
+
+async def fetch_all_pending_comments(page_limit: int = 20) -> list[dict]:
+    """Paginate through all pending comments and return them as a flat list."""
+    all_comments: list[dict] = []
+    cursor = None
+    while True:
+        result = await get_pending_comments(cursor=cursor, limit=page_limit)
+        items = result.get("items", [])
+        all_comments.extend(items)
+        cursor = result.get("next_cursor")
+        if not cursor or not items:
+            break
+    return all_comments
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +233,7 @@ async def upload_media(
     mime_type = mime_type or "application/octet-stream"
 
     with open(file_path, "rb") as f:
-        files = {"file": (file_path.split("/")[-1], f, mime_type)}
+        files = {"file": (Path(file_path).name, f, mime_type)}
         data: dict = {}
         if post_id:
             data["post_id"] = post_id

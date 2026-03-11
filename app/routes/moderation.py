@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 from app.auth.dependencies import get_admin_user
 from app.db import get_db
 from app.models.moderation import Ban, ModerationLog, ModerationRule
+from app.pagination import decode_cursor, encode_cursor
 from app.models.schemas.moderation import (
     BanCreate,
     BanResponse,
@@ -22,25 +23,6 @@ from app.models.user import User
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
 
-
-def _parse_cursor(cursor: str) -> tuple[datetime, UUID]:
-    """Parse a cursor string of the form '{created_at_iso}_{id}'."""
-    sep = cursor.rfind("_")
-    if sep == -1:
-        raise HTTPException(status_code=400, detail="Invalid cursor format")
-    ts_part = cursor[:sep]
-    id_part = cursor[sep + 1:]
-    try:
-        ts = datetime.fromisoformat(ts_part)
-        uid = UUID(id_part)
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid cursor format") from exc
-    return ts, uid
-
-
-def _build_cursor(entry: ModerationLog) -> str:
-    """Build a cursor string from a moderation log entry."""
-    return f"{entry.created_at.isoformat()}_{entry.id}"
 
 
 # --- Moderation Log ---
@@ -56,7 +38,7 @@ async def list_moderation_log(
     stmt = select(ModerationLog)
 
     if cursor:
-        cursor_ts, cursor_id = _parse_cursor(cursor)
+        cursor_ts, cursor_id = decode_cursor(cursor)
         stmt = stmt.where(
             (ModerationLog.created_at < cursor_ts)
             | ((ModerationLog.created_at == cursor_ts) & (ModerationLog.id < cursor_id))
@@ -70,7 +52,7 @@ async def list_moderation_log(
     next_cursor: str | None = None
     if len(entries) > limit:
         entries = entries[:limit]
-        next_cursor = _build_cursor(entries[-1])
+        next_cursor = encode_cursor(entries[-1].created_at, entries[-1].id)
 
     return ModerationLogListResponse(
         items=[ModerationLogResponse.model_validate(e) for e in entries],

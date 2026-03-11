@@ -101,15 +101,7 @@ async def get_media(
     filename: str,
     db: AsyncSession = Depends(get_db),
 ):
-    file_path = Path(settings.MEDIA_STORAGE_PATH) / filename
-
-    if not file_path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found.",
-        )
-
-    # Try to get content type from the database record
+    # Query DB first (authoritative source), then serve the file
     result = await db.execute(select(Media).where(Media.filename == filename))
     media = result.scalar_one_or_none()
 
@@ -119,4 +111,6 @@ async def get_media(
         content_type, _ = mimetypes.guess_type(filename)
         content_type = content_type or "application/octet-stream"
 
+    file_path = Path(settings.MEDIA_STORAGE_PATH) / filename
+    # FileResponse raises 404 if the file doesn't exist on disk
     return FileResponse(file_path, media_type=content_type)

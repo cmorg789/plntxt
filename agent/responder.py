@@ -14,7 +14,7 @@ from anthropic import beta_async_tool
 
 from agent.client import get_anthropic_client, load_agent_config
 from agent.tools import (
-    get_pending_comments,
+    fetch_all_pending_comments,
     get_post,
     moderate_comment,
     reply_to_comment,
@@ -120,6 +120,7 @@ async def run_responder() -> None:
 
     config = await load_agent_config()
     model = config["models"].get("responder", "claude-sonnet-4-6")
+    validation_model = config["models"].get("validation", "claude-haiku-4-5-20251001")
     personality = config["personality"]
 
     personality_instructions = ""
@@ -130,16 +131,7 @@ async def run_responder() -> None:
 
     system = SYSTEM_PROMPT.format(personality_instructions=personality_instructions)
 
-    # Fetch all pending comments
-    all_comments = []
-    cursor = None
-    while True:
-        result = await get_pending_comments(cursor=cursor, limit=20)
-        items = result.get("items", [])
-        all_comments.extend(items)
-        cursor = result.get("next_cursor")
-        if not cursor or not items:
-            break
+    all_comments = await fetch_all_pending_comments()
 
     if not all_comments:
         logger.info("No pending comments to respond to")
@@ -187,7 +179,7 @@ async def run_responder() -> None:
                 for block in message.content:
                     if block.type == "text" and block.text.strip():
                         is_valid, reason = await validate_agent_output(
-                            user_message, block.text
+                            user_message, block.text, model=validation_model
                         )
                         if not is_valid:
                             logger.warning(

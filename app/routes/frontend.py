@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -11,34 +10,16 @@ from sqlalchemy.orm import selectinload
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.auth.jwt import create_access_token
 from app.auth.passwords import hash_password, verify_password
-from app.config import settings
+from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
 from app.models.comment import AuthorType, Comment, CommentStatus
+from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post, PostStatus
-from app.models.session import Session
 from app.models.user import User, UserRole
 
 router = APIRouter(tags=["frontend"])
 templates = Jinja2Templates(directory="app/templates")
 
-
-def _parse_cursor(cursor: str) -> tuple[datetime, UUID]:
-    sep = cursor.rfind("_")
-    if sep == -1:
-        return None, None
-    ts_part = cursor[:sep]
-    id_part = cursor[sep + 1:]
-    try:
-        ts = datetime.fromisoformat(ts_part)
-        uid = UUID(id_part)
-    except (ValueError, TypeError):
-        return None, None
-    return ts, uid
-
-
-def _build_cursor(post: Post) -> str:
-    ts = post.published_at if post.published_at else post.created_at
-    return f"{ts.isoformat()}_{post.id}"
 
 
 @router.get("/")
@@ -65,7 +46,10 @@ async def post_list(
         stmt = stmt.where(Post.tags.any(tag))
 
     if cursor:
-        cursor_ts, cursor_id = _parse_cursor(cursor)
+        try:
+            cursor_ts, cursor_id = decode_cursor(cursor)
+        except HTTPException:
+            cursor_ts = cursor_id = None
         if cursor_ts and cursor_id:
             stmt = stmt.where(
                 (Post.published_at < cursor_ts)
@@ -80,7 +64,8 @@ async def post_list(
     next_cursor = None
     if len(posts) > limit:
         posts = posts[:limit]
-        next_cursor = _build_cursor(posts[-1])
+        ts = posts[-1].published_at if posts[-1].published_at else posts[-1].created_at
+        next_cursor = encode_cursor(ts, posts[-1].id)
 
     return templates.TemplateResponse(
         "posts/list.html",
@@ -110,19 +95,19 @@ async def post_detail(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Post not found")
 
-    # Load comment tree: top-level visible comments with nested replies
+    # Load comment tree: admins see all statuses, others see only visible
+    is_admin = current_user and current_user.role == UserRole.ADMIN
+    comment_query = select(Comment).where(
+        Comment.post_id == post.id,
+        Comment.parent_id.is_(None),
+    )
+    if not is_admin:
+        comment_query = comment_query.where(Comment.status == CommentStatus.VISIBLE)
     comment_result = await db.execute(
-        select(Comment)
-        .where(
-            Comment.post_id == post.id,
-            Comment.parent_id.is_(None),
-            Comment.status == CommentStatus.VISIBLE,
-        )
+        comment_query
         .options(
             selectinload(Comment.user),
-            selectinload(Comment.replies).selectinload(Comment.user),
-            selectinload(Comment.replies)
-            .selectinload(Comment.replies)
+            selectinload(Comment.replies, recursion_depth=-1)
             .selectinload(Comment.user),
         )
         .order_by(Comment.created_at.asc())
@@ -224,15 +209,6 @@ async def reply_comment_form(
 # Auth form pages (HTML login / register)
 # ---------------------------------------------------------------------------
 
-def _set_session_cookie(response, token: str) -> None:
-    response.set_cookie(
-        key="session_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-
 
 @router.get("/auth/login")
 async def login_page(
@@ -280,16 +256,11 @@ async def login_submit(
         )
 
     token = create_access_token(user.id)
-    db.add(Session(
-        user_id=user.id,
-        token=token,
-        expires_at=datetime.utcnow()
-        + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    ))
+    db.add(build_session(user.id, token))
     await db.commit()
 
     response = RedirectResponse(url="/posts", status_code=302)
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
     return response
 
 
@@ -353,14 +324,9 @@ async def register_submit(
     await db.flush()
 
     token = create_access_token(user.id)
-    db.add(Session(
-        user_id=user.id,
-        token=token,
-        expires_at=datetime.utcnow()
-        + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    ))
+    db.add(build_session(user.id, token))
     await db.commit()
 
     response = RedirectResponse(url="/posts", status_code=302)
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
     return response

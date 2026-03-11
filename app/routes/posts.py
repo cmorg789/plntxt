@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -9,31 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_admin_user, get_agent_or_admin, get_optional_user
 from app.db import get_db
 from app.models.post import Post, PostStatus
+from app.pagination import decode_cursor, encode_cursor
 from app.models.schemas.posts import PostCreate, PostListResponse, PostResponse, PostUpdate
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
-
-def _parse_cursor(cursor: str) -> tuple[datetime, UUID]:
-    """Parse a cursor string of the form '{created_at_iso}_{id}'."""
-    sep = cursor.rfind("_")
-    if sep == -1:
-        raise HTTPException(status_code=400, detail="Invalid cursor format")
-    ts_part = cursor[:sep]
-    id_part = cursor[sep + 1 :]
-    try:
-        ts = datetime.fromisoformat(ts_part)
-        uid = UUID(id_part)
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid cursor format") from exc
-    return ts, uid
-
-
-def _build_cursor(post: Post, *, use_published: bool) -> str:
-    """Build a cursor string from a post."""
-    ts = post.published_at if use_published and post.published_at else post.created_at
-    return f"{ts.isoformat()}_{post.id}"
 
 
 @router.get("", response_model=PostListResponse)
@@ -71,7 +52,7 @@ async def list_posts(
 
     # Cursor-based pagination
     if cursor:
-        cursor_ts, cursor_id = _parse_cursor(cursor)
+        cursor_ts, cursor_id = decode_cursor(cursor)
         stmt = stmt.where(
             (sort_col < cursor_ts)
             | ((sort_col == cursor_ts) & (Post.id < cursor_id))
@@ -85,7 +66,8 @@ async def list_posts(
     next_cursor: str | None = None
     if len(posts) > limit:
         posts = posts[:limit]
-        next_cursor = _build_cursor(posts[-1], use_published=use_published)
+        ts = posts[-1].published_at if use_published and posts[-1].published_at else posts[-1].created_at
+        next_cursor = encode_cursor(ts, posts[-1].id)
 
     return PostListResponse(
         items=[PostResponse.model_validate(p) for p in posts],
@@ -124,7 +106,7 @@ async def create_post(
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="A post with this slug already exists")
 
-    published_at = datetime.now(timezone.utc) if data.status == PostStatus.PUBLISHED else None
+    published_at = datetime.utcnow() if data.status == PostStatus.PUBLISHED else None
 
     post = Post(
         title=data.title,
@@ -159,7 +141,7 @@ async def update_post(
 
     # Set published_at when transitioning to PUBLISHED for the first time
     if post.status == PostStatus.PUBLISHED and post.published_at is None:
-        post.published_at = datetime.now(timezone.utc)
+        post.published_at = datetime.utcnow()
 
     await db.commit()
     await db.refresh(post)
