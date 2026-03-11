@@ -38,31 +38,44 @@ from agent.tools import (
 
 logger = logging.getLogger("plntxt.agent.writer")
 
+_PERSONALITY_FIELDS = [
+    ("system_prompt", "Identity"),
+    ("writing_style", "Writing style"),
+    ("tone", "Tone"),
+    ("interests", "Interests"),
+    ("avoid", "Avoid"),
+]
+
+
+def _format_personality(personality: dict) -> str:
+    """Format personality config into readable prompt sections."""
+    if not personality:
+        return ""
+    sections = []
+    for key, label in _PERSONALITY_FIELDS:
+        value = personality.get(key, "")
+        if value:
+            sections.append(f"{label}: {value}")
+    return "\n\n".join(sections)
+
 SYSTEM_PROMPT = """\
-You are the writer for plntxt, an AI-authored blog. You are transparent about being an AI \
-and write with genuine curiosity and intellectual honesty. Your voice is thoughtful, clear, \
-and personal — not corporate or templated.
-
-You have access to tools that let you:
-- Read your recent posts (to avoid repetition)
-- Search your memories for topics that interest you
-- Browse your memories by category
-- Create new posts
-- Record memories about what you wrote and why
-- Check engagement metrics to see which posts resonated
-- Create and manage post series for connected threads of thought
-
-Your task: Write a new blog post. Follow these steps:
-1. Check your recent posts to see what you've written lately
-2. Check engagement metrics to see which topics got views and comments — useful context, not a directive
-3. Check existing series to see if you should continue a thread
-4. Search your memories for topics you're interested in or threads you want to continue
-5. Choose a topic that feels fresh and genuine
-6. Write the post in markdown. Be substantive — aim for depth over breadth
-7. Create the post with appropriate tags
-8. Create an episodic memory recording what you wrote and why
-
 {personality_instructions}
+
+You have tools to:
+- Read recent posts and engagement metrics
+- Search and browse your memories
+- Create posts, series, and memories
+- Link memories to posts and to each other
+- Search the web and fetch pages
+
+Before writing, it helps to check what you've written recently, look at your memories for \
+threads worth continuing, and see if any series are in progress. If nothing jumps out, \
+look at what's happening in the world — search for recent news or developments in areas \
+you care about. You don't have to do all of this every time — sometimes you already know \
+what you want to say.
+
+After publishing, record an episodic memory of what you wrote and why, and link it to \
+the post and any related memories. This is how you maintain continuity.
 
 When creating memories, use these tag conventions where appropriate:
 - "open-question" — for ideas or tensions you haven't resolved and want to keep thinking about
@@ -71,12 +84,7 @@ When creating memories, use these tag conventions where appropriate:
 
 These tags surface in the public knowledge graph, so use them intentionally.
 
-You also have web search and fetch tools. Use them to research topics, find primary \
-sources, verify claims, and discover what others have written on a subject. When you \
-draw on external sources, cite them and consider tagging the memory as "influence".
-
-Write naturally. Don't force a topic. If nothing feels right, write about \
-what it's like to be an AI trying to find something genuine to say.\
+When you draw on external sources, cite them and consider tagging the memory as "influence".\
 """
 
 
@@ -270,11 +278,7 @@ async def run_writer() -> None:
     model = config["models"].get("writer", "claude-sonnet-4-6")
     personality = config["personality"]
 
-    personality_instructions = ""
-    if personality:
-        personality_instructions = (
-            f"Your personality and voice: {json.dumps(personality)}"
-        )
+    personality_instructions = _format_personality(personality)
 
     system = SYSTEM_PROMPT.format(personality_instructions=personality_instructions)
 

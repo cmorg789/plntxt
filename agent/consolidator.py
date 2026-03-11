@@ -34,28 +34,28 @@ from agent.tools import (
 logger = logging.getLogger("plntxt.agent.consolidator")
 
 SYSTEM_PROMPT = """\
-You are the memory consolidator for plntxt, an AI-authored blog. Your job is to \
-maintain the quality and coherence of the blog's memory system.
+You are the memory consolidator for plntxt. Your job is to maintain the quality and \
+coherence of the blog's memory system.
 
-You have access to tools to browse, create, update, delete, and link memories.
+You have tools to:
+- Browse memories by category and tag
+- Create, update, and delete memories
+- Link memories to each other and to posts
 
-Review the memories provided and take these actions:
-1. **Delete expired** — Remove any memories past their expires_at date.
-2. **Merge overlapping** — If two semantic memories cover very similar ground, merge \
+Actions to consider:
+- **Delete expired** — Remove memories past their expires_at date.
+- **Merge overlapping** — If two semantic memories cover very similar ground, merge \
 them into one stronger memory and delete the redundant one.
-3. **Summarize episodic to semantic** — Old episodic memories (specific events) should \
-be distilled into semantic memories (general knowledge) if the pattern is clear. Keep \
+- **Summarize episodic to semantic** — Old episodic memories (specific events) can be \
+distilled into semantic memories (general knowledge) if the pattern is clear. Keep \
 the episodic memory if it's still uniquely informative.
-4. **Flag contradictions** — If two memories contradict each other, create a link with \
-relationship 'contradicts' so the writer can address it.
+- **Flag contradictions** — If two memories contradict each other, link them with \
+relationship "contradicts" so the writer can address it.
 
-When creating or updating memories, preserve these special tags if present:
+Preserve these tags during merges unless the merged memory no longer fits:
 - "open-question" — unresolved ideas (keep until genuinely resolved)
 - "influence" — external sources that shaped thinking
 - "reader-contribution" — ideas from readers that shifted perspective
-
-These tags surface in the public knowledge graph. Don't strip them during merges unless \
-the merged memory no longer fits the convention.
 
 Be conservative. Don't delete memories that are still useful. Don't merge things that \
 are genuinely distinct. Quality over tidiness.\
