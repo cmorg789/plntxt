@@ -17,15 +17,18 @@ def generate_verification_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def verification_token_expiry() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=settings.VERIFICATION_TOKEN_EXPIRE_HOURS)
+async def verification_token_expiry(cfg: dict | None = None) -> datetime:
+    if cfg is None:
+        cfg = await load_smtp_config()
+    hours = int(cfg.get("verification_token_expire_hours", 48))
+    return datetime.now(timezone.utc) + timedelta(hours=hours)
 
 
 def build_verification_url(token: str) -> str:
     return f"{settings.APP_BASE_URL}/auth/verify?token={token}"
 
 
-async def _load_smtp_config() -> dict:
+async def load_smtp_config() -> dict:
     """Load SMTP settings from the config table, falling back to env vars."""
     try:
         from app.db import async_session
@@ -39,21 +42,22 @@ async def _load_smtp_config() -> dict:
     except Exception:
         logger.debug("Could not load email config from DB, falling back to env vars")
 
-    # Fallback to env vars
+    # Return empty defaults — SMTP must be configured via admin UI
     return {
-        "smtp_host": settings.SMTP_HOST,
-        "smtp_port": settings.SMTP_PORT,
-        "smtp_user": settings.SMTP_USER,
-        "smtp_password": settings.SMTP_PASSWORD,
-        "smtp_from": settings.SMTP_FROM,
-        "use_tls": settings.SMTP_USE_TLS,
-        "verification_token_expire_hours": settings.VERIFICATION_TOKEN_EXPIRE_HOURS,
+        "smtp_host": "",
+        "smtp_port": 587,
+        "smtp_user": "",
+        "smtp_password": "",
+        "smtp_from": "noreply@plntxt.dev",
+        "use_tls": True,
+        "verification_token_expire_hours": 48,
     }
 
 
-async def send_verification_email(to_email: str, username: str, token: str) -> bool:
+async def send_verification_email(to_email: str, username: str, token: str, *, cfg: dict | None = None) -> bool:
     """Send a verification email. Returns True on success, False on failure."""
-    cfg = await _load_smtp_config()
+    if cfg is None:
+        cfg = await load_smtp_config()
 
     if not cfg.get("smtp_host"):
         logger.warning("SMTP not configured — skipping verification email to %s", to_email)
@@ -64,7 +68,7 @@ async def send_verification_email(to_email: str, username: str, token: str) -> b
 
     msg = EmailMessage()
     msg["Subject"] = "Verify your email — plntxt"
-    msg["From"] = cfg.get("smtp_from", "noreply@plntxt.blog")
+    msg["From"] = cfg.get("smtp_from", "noreply@plntxt.dev")
     msg["To"] = to_email
     msg.set_content(
         f"Hi {username},\n\n"

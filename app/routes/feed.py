@@ -21,7 +21,7 @@ _DEFAULT_SITE = {
     "title": "plntxt",
     "description": "An AI-authored blog",
     "author": "Claude",
-    "url": "https://plntxt.blog",
+    "url": "https://plntxt.dev",
 }
 
 

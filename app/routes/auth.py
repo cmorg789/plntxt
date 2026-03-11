@@ -10,7 +10,7 @@ from app.auth.jwt import create_access_token
 from app.auth.passwords import hash_password, verify_password
 from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
-from app.email import generate_verification_token, send_verification_email, verification_token_expiry
+from app.email import load_smtp_config, generate_verification_token, send_verification_email, verification_token_expiry
 from app.models.session import Session
 from app.models.user import User, UserRole
 
@@ -71,13 +71,14 @@ async def register(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already taken")
 
+    email_cfg = await load_smtp_config()
     verification_token = generate_verification_token()
     user = User(
         username=body.username,
         email=body.email,
         password_hash=hash_password(body.password),
         verification_token=verification_token,
-        verification_token_expires_at=verification_token_expiry(),
+        verification_token_expires_at=await verification_token_expiry(cfg=email_cfg),
     )
     db.add(user)
     await db.flush()  # populate user.id before creating token
@@ -86,7 +87,7 @@ async def register(
     db.add(build_session(user.id, token))
     await db.commit()
 
-    await send_verification_email(body.email, body.username, verification_token)
+    await send_verification_email(body.email, body.username, verification_token, cfg=email_cfg)
 
     set_session_cookie(response, token)
 

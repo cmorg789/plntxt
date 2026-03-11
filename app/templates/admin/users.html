@@ -20,6 +20,20 @@
     <a href="/admin/email">Email</a>
   </nav>
 
+  <form class="user-search" action="/admin/users" method="get" style="margin-bottom: 1rem;">
+    <input
+      type="text"
+      name="q"
+      value="{{ q or '' }}"
+      placeholder="Search by username or email…"
+      style="padding: 0.4rem 0.6rem; width: 20rem; max-width: 100%;"
+    >
+    <button type="submit" class="btn btn-small">Search</button>
+    {% if q %}
+    <a href="/admin/users" class="btn btn-small">Clear</a>
+    {% endif %}
+  </form>
+
   {% if users %}
   <table class="moderation-table">
     <thead>
@@ -29,6 +43,7 @@
         <th>Role</th>
         <th>Status</th>
         <th>Joined</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -58,6 +73,47 @@
           {% endif %}
         </td>
         <td class="nowrap">{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="user-actions">
+          {% if user.is_banned %}
+          <button
+            class="btn btn-small"
+            hx-post="/admin/users/{{ user.id }}/unban"
+            hx-target="#user-{{ user.id }}"
+            hx-swap="outerHTML"
+          >Unban</button>
+          {% else %}
+          <button
+            class="btn btn-small btn-delete"
+            hx-post="/admin/users/{{ user.id }}/ban"
+            hx-target="#user-{{ user.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="Ban this user?"
+          >Ban</button>
+          {% endif %}
+          <button
+            class="btn btn-small"
+            hx-post="/admin/users/{{ user.id }}/reset-password"
+            hx-target="#admin-modal-body"
+            hx-swap="innerHTML"
+            hx-confirm="Reset password? A temporary password will be generated."
+          >Reset PW</button>
+          {% if user.role.value == 'agent' %}
+          <button
+            class="btn btn-small"
+            hx-post="/admin/users/{{ user.id }}/generate-api-key"
+            hx-target="#admin-modal-body"
+            hx-swap="innerHTML"
+            hx-confirm="Generate a new API key? Any existing key will be replaced."
+          >API Key</button>
+          {% endif %}
+          <button
+            class="btn btn-small btn-delete"
+            hx-delete="/admin/users/{{ user.id }}"
+            hx-target="#user-{{ user.id }}"
+            hx-swap="delete"
+            hx-confirm="Permanently delete this user and all their data?"
+          >Delete</button>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -65,14 +121,31 @@
 
   <div class="pagination">
     {% if prev_cursor %}
-    <a href="/admin/users?cursor={{ prev_cursor }}&direction=prev" class="btn btn-small">Previous</a>
+    <a href="/admin/users?cursor={{ prev_cursor }}&direction=prev{% if q %}&q={{ q }}{% endif %}" class="btn btn-small">Previous</a>
     {% endif %}
     {% if next_cursor %}
-    <a href="/admin/users?cursor={{ next_cursor }}" class="btn btn-small">Next</a>
+    <a href="/admin/users?cursor={{ next_cursor }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-small">Next</a>
     {% endif %}
   </div>
   {% else %}
   <p class="empty">No users found.</p>
   {% endif %}
 </div>
+
+<dialog id="admin-modal">
+  <div class="admin-modal-content">
+    <div id="admin-modal-body"></div>
+    <form method="dialog">
+      <button class="btn btn-small" style="margin-top: 1rem;">Close</button>
+    </form>
+  </div>
+</dialog>
+
+<script>
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  if (e.detail.target.id === 'admin-modal-body') {
+    document.getElementById('admin-modal').showModal();
+  }
+});
+</script>
 {% endblock %}

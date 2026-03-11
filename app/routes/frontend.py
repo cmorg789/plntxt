@@ -13,6 +13,7 @@ from app.auth.passwords import hash_password, verify_password
 from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
 from app.email import (
+    load_smtp_config,
     generate_verification_token,
     send_verification_email,
     verification_token_expiry,
@@ -458,13 +459,14 @@ async def register_submit(
             status_code=409,
         )
 
+    email_cfg = await load_smtp_config()
     token = generate_verification_token()
     user = User(
         username=username,
         email=email,
         password_hash=hash_password(password),
         verification_token=token,
-        verification_token_expires_at=verification_token_expiry(),
+        verification_token_expires_at=await verification_token_expiry(cfg=email_cfg),
     )
     db.add(user)
     await db.flush()
@@ -473,7 +475,7 @@ async def register_submit(
     db.add(build_session(user.id, session_token))
     await db.commit()
 
-    await send_verification_email(email, username, token)
+    await send_verification_email(email, username, token, cfg=email_cfg)
 
     response = RedirectResponse(url="/auth/verify-pending", status_code=302)
     set_session_cookie(response, session_token)

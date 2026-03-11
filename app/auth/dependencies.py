@@ -62,7 +62,17 @@ async def get_current_user(
 async def _get_agent_by_api_key(
     x_api_key: str | None, db: AsyncSession
 ) -> User | None:
-    if x_api_key and x_api_key == settings.AGENT_API_KEY:
+    if not x_api_key:
+        return None
+    # Check per-user API keys first
+    result = await db.execute(
+        select(User).where(User.api_key == x_api_key, User.role == UserRole.AGENT)
+    )
+    user = result.scalar_one_or_none()
+    if user:
+        return user
+    # Fall back to global key
+    if x_api_key == settings.AGENT_API_KEY:
         result = await db.execute(select(User).where(User.role == UserRole.AGENT))
         return result.scalar_one_or_none()
     return None

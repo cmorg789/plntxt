@@ -1,19 +1,22 @@
+import secrets
+from html import escape
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.responses import RedirectResponse
 
 from app.auth.dependencies import get_admin_user
+from app.auth.passwords import hash_password
 from app.db import get_db
 from app.models.comment import Comment, CommentStatus, ResponseStatus
 from app.models.config import Config
 from app.models.memory import Memory
-from app.models.moderation import ModerationAction, ModerationLog, ModerationRule, RuleType
+from app.models.moderation import Ban, ModerationAction, ModerationLog, ModerationRule, RuleType
 from app.models.post import Post, PostStatus
 from app.models.user import User, UserRole
 
@@ -583,10 +586,15 @@ async def users_page(
     request: Request,
     cursor: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
+    q: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_admin_user),
 ):
     stmt = select(User)
+
+    if q and q.strip():
+        search = f"%{q.strip()}%"
+        stmt = stmt.where(User.username.ilike(search) | User.email.ilike(search))
 
     if cursor:
         try:
@@ -619,13 +627,13 @@ async def users_page(
             "users": users,
             "next_cursor": next_cursor,
             "prev_cursor": cursor,
+            "q": q,
         },
     )
 
 
 def _render_user_row(user: User) -> str:
     """Return an HTML table row for HTMX swap."""
-    role_class = f"status-{user.role.value}"
     banned_badge = (
         '<span class="status-badge status-hidden">banned</span>'
         if user.is_banned
@@ -638,9 +646,32 @@ def _render_user_row(user: User) -> str:
         for r in UserRole
     )
 
+    if user.is_banned:
+        ban_btn = (
+            f'<button class="btn btn-small" '
+            f'hx-post="/admin/users/{user.id}/unban" '
+            f'hx-target="#user-{user.id}" hx-swap="outerHTML">Unban</button>'
+        )
+    else:
+        ban_btn = (
+            f'<button class="btn btn-small btn-delete" '
+            f'hx-post="/admin/users/{user.id}/ban" '
+            f'hx-target="#user-{user.id}" hx-swap="outerHTML" '
+            f'hx-confirm="Ban this user?">Ban</button>'
+        )
+
+    api_key_btn = ""
+    if user.role == UserRole.AGENT:
+        api_key_btn = (
+            f'<button class="btn btn-small" '
+            f'hx-post="/admin/users/{user.id}/generate-api-key" '
+            f'hx-target="#admin-modal-body" hx-swap="innerHTML" '
+            f'hx-confirm="Generate a new API key? Any existing key will be replaced.">API Key</button>'
+        )
+
     return f"""<tr id="user-{user.id}">
-  <td>{user.username}</td>
-  <td>{user.email}</td>
+  <td>{escape(user.username)}</td>
+  <td>{escape(user.email)}</td>
   <td>
     <select
       hx-patch="/admin/users/{user.id}/role"
@@ -653,6 +684,18 @@ def _render_user_row(user: User) -> str:
   </td>
   <td>{banned_badge}</td>
   <td class="nowrap">{created}</td>
+  <td class="user-actions">
+    {ban_btn}
+    <button class="btn btn-small"
+      hx-post="/admin/users/{user.id}/reset-password"
+      hx-target="#admin-modal-body" hx-swap="innerHTML"
+      hx-confirm="Reset password? A temporary password will be generated.">Reset PW</button>
+    {api_key_btn}
+    <button class="btn btn-small btn-delete"
+      hx-delete="/admin/users/{user.id}"
+      hx-target="#user-{user.id}" hx-swap="delete"
+      hx-confirm="Permanently delete this user and all their data?">Delete</button>
+  </td>
 </tr>"""
 
 
@@ -676,6 +719,114 @@ async def update_user_role(
         await db.refresh(user)
 
     return HTMLResponse(_render_user_row(user))
+
+
+@router.post("/users/{user_id}/ban", response_class=HTMLResponse)
+async def ban_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(status_code=400, detail="Cannot ban an admin")
+
+    ban = Ban(user_id=user.id, reason="Banned via admin panel")
+    db.add(ban)
+    user.is_banned = True
+    await db.commit()
+    await db.refresh(user)
+    return HTMLResponse(_render_user_row(user))
+
+
+@router.post("/users/{user_id}/unban", response_class=HTMLResponse)
+async def unban_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Remove all active bans
+    await db.execute(delete(Ban).where(Ban.user_id == user.id))
+
+    user.is_banned = False
+    await db.commit()
+    await db.refresh(user)
+    return HTMLResponse(_render_user_row(user))
+
+
+@router.post("/users/{user_id}/reset-password", response_class=HTMLResponse)
+async def reset_user_password(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    temp_password = secrets.token_urlsafe(12)
+    user.password_hash = hash_password(temp_password)
+    await db.commit()
+
+    return HTMLResponse(
+        f'<h3>Password Reset</h3>'
+        f'<p>Temporary password for <strong>{escape(user.username)}</strong>:</p>'
+        f'<code class="credential-display">{escape(temp_password)}</code>'
+        f'<p class="hint">This will not be shown again.</p>'
+    )
+
+
+@router.post("/users/{user_id}/generate-api-key", response_class=HTMLResponse)
+async def generate_api_key(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role != UserRole.AGENT:
+        raise HTTPException(status_code=400, detail="API keys are for agent users only")
+
+    api_key = f"plntxt_{secrets.token_urlsafe(32)}"
+    user.api_key = api_key
+    await db.commit()
+
+    return HTMLResponse(
+        f'<h3>API Key Generated</h3>'
+        f'<p>API key for <strong>{escape(user.username)}</strong>:</p>'
+        f'<code class="credential-display">{escape(api_key)}</code>'
+        f'<p class="hint">This will not be shown again. Use as <code>X-API-Key</code> header.</p>'
+    )
+
+
+@router.delete("/users/{user_id}", response_class=HTMLResponse)
+async def delete_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(status_code=400, detail="Cannot delete an admin")
+
+    await db.delete(user)
+    await db.commit()
+    return HTMLResponse("")
 
 
 # ---------------------------------------------------------------------------
@@ -926,7 +1077,7 @@ async def email_test(
 
     msg = EmailMessage()
     msg["Subject"] = "Test email from plntxt"
-    msg["From"] = form_data.get("smtp_from", "noreply@plntxt.blog")
+    msg["From"] = form_data.get("smtp_from", "noreply@plntxt.dev")
     msg["To"] = to_email
     msg.set_content("This is a test email from your plntxt installation. If you received this, email is working.")
 

@@ -23,7 +23,7 @@ def upgrade() -> None:
             "smtp_port": 587,
             "smtp_user": "",
             "smtp_password": "",
-            "smtp_from": "noreply@plntxt.blog",
+            "smtp_from": "noreply@plntxt.dev",
             "use_tls": True,
             "verification_token_expire_hours": 48,
         }))
