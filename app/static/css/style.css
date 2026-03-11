@@ -64,7 +64,7 @@
     --success-bg: #e6f0e6;
     --warn-bg: #f0ead6;
     --warn-text: #6b5c00;
-    --max-width: 640px;
+    --max-width: 786px;
     --admin-max-width: 960px;
     --space-xs: 0.25rem;
     --space-sm: 0.5rem;
@@ -904,9 +904,11 @@ a:hover {
 .status-hidden { background: var(--error-bg); color: var(--error); }
 
 
-.actions {
-    display: flex;
-    gap: var(--space-sm);
+td.actions {
+    vertical-align: middle;
+}
+td.actions .btn + .btn {
+    margin-left: var(--space-sm);
 }
 
 .btn {
@@ -934,7 +936,7 @@ a:hover {
 .btn-delete { border-color: var(--error); color: var(--error); }
 .btn-delete:hover { background: var(--error); color: var(--bg); }
 .btn-small { font-size: 0.65rem; }
-.user-actions { white-space: nowrap; }
+.user-actions { white-space: nowrap; vertical-align: middle; }
 .user-actions .btn { margin-right: 0.25rem; }
 
 /* Admin modal */

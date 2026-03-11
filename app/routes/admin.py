@@ -30,30 +30,28 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 async def _collect_stats(db: AsyncSession) -> dict:
-    post_count = await db.scalar(select(func.count()).select_from(Post))
-    comment_count = await db.scalar(select(func.count()).select_from(Comment))
-    pending_comments = await db.scalar(
-        select(func.count())
-        .select_from(Comment)
-        .where(Comment.response_status == ResponseStatus.PENDING)
+    stmt = select(
+        select(func.count()).select_from(Post).correlate(None).scalar_subquery().label("post_count"),
+        select(func.count()).select_from(Comment).correlate(None).scalar_subquery().label("comment_count"),
+        select(func.count()).select_from(Comment).where(
+            Comment.response_status == ResponseStatus.PENDING
+        ).correlate(None).scalar_subquery().label("pending_comments"),
+        select(func.count()).select_from(Comment).where(
+            Comment.status == CommentStatus.FLAGGED
+        ).correlate(None).scalar_subquery().label("flagged_comments"),
+        select(func.count()).select_from(User).correlate(None).scalar_subquery().label("user_count"),
+        select(func.count()).select_from(Memory).correlate(None).scalar_subquery().label("memory_count"),
+        select(func.coalesce(func.sum(Post.view_count), 0)).select_from(Post).correlate(None).scalar_subquery().label("total_views"),
     )
-    flagged_comments = await db.scalar(
-        select(func.count())
-        .select_from(Comment)
-        .where(Comment.status == CommentStatus.FLAGGED)
-    )
-    user_count = await db.scalar(select(func.count()).select_from(User))
-    memory_count = await db.scalar(select(func.count()).select_from(Memory))
-    total_views = await db.scalar(select(func.sum(Post.view_count)).select_from(Post))
-
+    row = (await db.execute(stmt)).one()
     return {
-        "post_count": post_count,
-        "comment_count": comment_count,
-        "pending_comments": pending_comments,
-        "flagged_comments": flagged_comments,
-        "user_count": user_count,
-        "memory_count": memory_count,
-        "total_views": total_views or 0,
+        "post_count": row.post_count,
+        "comment_count": row.comment_count,
+        "pending_comments": row.pending_comments,
+        "flagged_comments": row.flagged_comments,
+        "user_count": row.user_count,
+        "memory_count": row.memory_count,
+        "total_views": row.total_views,
     }
 
 
@@ -61,7 +59,7 @@ async def _collect_stats(db: AsyncSession) -> dict:
 async def sidebar_partial(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     stats = await _collect_stats(db)
 
@@ -106,7 +104,7 @@ async def sidebar_partial(
 @router.get("/stats")
 async def get_stats(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     return await _collect_stats(db)
 
@@ -123,7 +121,7 @@ async def moderation_queue(
     cursor: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     stmt = (
         select(Comment)
@@ -160,6 +158,7 @@ async def moderation_queue(
         "admin/moderation.html",
         {
             "request": request,
+            "current_user": admin_user,
             "comments": comments,
             "next_cursor": next_cursor,
             "prev_cursor": cursor,
@@ -267,7 +266,7 @@ async def approve_comment(
     request: Request,
     source: str = Query("table"),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     comment = await _update_comment_status(comment_id, CommentStatus.VISIBLE, db)
     if source == "inline":
@@ -283,7 +282,7 @@ async def hide_comment(
     request: Request,
     source: str = Query("table"),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     comment = await _update_comment_status(comment_id, CommentStatus.HIDDEN, db)
     if source == "inline":
@@ -299,7 +298,7 @@ async def flag_comment(
     request: Request,
     source: str = Query("table"),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     comment = await _update_comment_status(comment_id, CommentStatus.FLAGGED, db)
     if source == "inline":
@@ -314,7 +313,7 @@ async def delete_comment(
     comment_id: UUID,
     source: str = Query("table"),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(
         select(Comment).where(Comment.id == comment_id)
@@ -343,7 +342,7 @@ async def delete_comment(
 async def config_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(Config))
     configs = {
@@ -354,8 +353,8 @@ async def config_page(
     csrf_token = request.cookies.get("csrf_token", "")
     return templates.TemplateResponse(
         "admin/config.html",
-        {"request": request, "configs": configs, "csrf_token": csrf_token,
-         "message": None, "error": None},
+        {"request": request, "current_user": admin_user, "configs": configs,
+         "csrf_token": csrf_token, "message": None, "error": None},
     )
 
 
@@ -364,7 +363,7 @@ async def config_edit_form(
     key: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(Config).where(Config.key == key))
     config = result.scalar_one_or_none()
@@ -403,7 +402,7 @@ async def config_edit_form(
 @router.get("/config/json")
 async def list_config_json(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(Config))
     configs = result.scalars().all()
@@ -415,7 +414,7 @@ async def update_config(
     key: str,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(Config).where(Config.key == key))
     config = result.scalar_one_or_none()
@@ -440,7 +439,7 @@ async def update_config(
 async def rules_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     # Active/inactive rules (not proposals)
     result = await db.execute(
@@ -460,7 +459,7 @@ async def rules_page(
 
     return templates.TemplateResponse(
         "admin/rules.html",
-        {"request": request, "rules": rules, "proposed_rules": proposed_rules},
+        {"request": request, "current_user": admin_user, "rules": rules, "proposed_rules": proposed_rules},
     )
 
 
@@ -502,7 +501,7 @@ def _render_rule_row(rule: ModerationRule) -> str:
 async def create_rule_form(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     form_data = await request.form()
     rule_type = form_data.get("rule_type", "keyword")
@@ -528,7 +527,7 @@ async def create_rule_form(
 async def approve_rule(
     rule_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(ModerationRule).where(ModerationRule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -547,7 +546,7 @@ async def approve_rule(
 async def toggle_rule(
     rule_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(ModerationRule).where(ModerationRule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -564,7 +563,7 @@ async def toggle_rule(
 async def delete_rule_html(
     rule_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(ModerationRule).where(ModerationRule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -588,7 +587,7 @@ async def users_page(
     limit: int = Query(20, ge=1, le=100),
     q: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     stmt = select(User)
 
@@ -624,7 +623,9 @@ async def users_page(
         "admin/users.html",
         {
             "request": request,
+            "current_user": admin_user,
             "users": users,
+            "roles": list(UserRole),
             "next_cursor": next_cursor,
             "prev_cursor": cursor,
             "q": q,
@@ -632,71 +633,12 @@ async def users_page(
     )
 
 
-def _render_user_row(user: User) -> str:
-    """Return an HTML table row for HTMX swap."""
-    banned_badge = (
-        '<span class="status-badge status-hidden">banned</span>'
-        if user.is_banned
-        else '<span class="status-badge status-visible">active</span>'
+def _render_user_row(request: Request, user: User):
+    """Return a TemplateResponse rendering the user row partial for HTMX swap."""
+    return templates.TemplateResponse(
+        "admin/_user_row.html",
+        {"request": request, "user": user, "roles": list(UserRole)},
     )
-    created = user.created_at.strftime("%Y-%m-%d %H:%M")
-
-    role_options = "".join(
-        f'<option value="{r.value}" {"selected" if r == user.role else ""}>{r.value}</option>'
-        for r in UserRole
-    )
-
-    if user.is_banned:
-        ban_btn = (
-            f'<button class="btn btn-small" '
-            f'hx-post="/admin/users/{user.id}/unban" '
-            f'hx-target="#user-{user.id}" hx-swap="outerHTML">Unban</button>'
-        )
-    else:
-        ban_btn = (
-            f'<button class="btn btn-small btn-delete" '
-            f'hx-post="/admin/users/{user.id}/ban" '
-            f'hx-target="#user-{user.id}" hx-swap="outerHTML" '
-            f'hx-confirm="Ban this user?">Ban</button>'
-        )
-
-    api_key_btn = ""
-    if user.role == UserRole.AGENT:
-        api_key_btn = (
-            f'<button class="btn btn-small" '
-            f'hx-post="/admin/users/{user.id}/generate-api-key" '
-            f'hx-target="#admin-modal-body" hx-swap="innerHTML" '
-            f'hx-confirm="Generate a new API key? Any existing key will be replaced.">API Key</button>'
-        )
-
-    return f"""<tr id="user-{user.id}">
-  <td>{escape(user.username)}</td>
-  <td>{escape(user.email)}</td>
-  <td>
-    <select
-      hx-patch="/admin/users/{user.id}/role"
-      hx-target="#user-{user.id}"
-      hx-swap="outerHTML"
-      hx-include="this"
-      name="role"
-      class="role-select"
-    >{role_options}</select>
-  </td>
-  <td>{banned_badge}</td>
-  <td class="nowrap">{created}</td>
-  <td class="user-actions">
-    {ban_btn}
-    <button class="btn btn-small"
-      hx-post="/admin/users/{user.id}/reset-password"
-      hx-target="#admin-modal-body" hx-swap="innerHTML"
-      hx-confirm="Reset password? A temporary password will be generated.">Reset PW</button>
-    {api_key_btn}
-    <button class="btn btn-small btn-delete"
-      hx-delete="/admin/users/{user.id}"
-      hx-target="#user-{user.id}" hx-swap="delete"
-      hx-confirm="Permanently delete this user and all their data?">Delete</button>
-  </td>
-</tr>"""
 
 
 @router.patch("/users/{user_id}/role", response_class=HTMLResponse)
@@ -704,7 +646,7 @@ async def update_user_role(
     user_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -718,14 +660,15 @@ async def update_user_role(
         await db.commit()
         await db.refresh(user)
 
-    return HTMLResponse(_render_user_row(user))
+    return _render_user_row(request, user)
 
 
 @router.post("/users/{user_id}/ban", response_class=HTMLResponse)
 async def ban_user(
     user_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -739,14 +682,15 @@ async def ban_user(
     user.is_banned = True
     await db.commit()
     await db.refresh(user)
-    return HTMLResponse(_render_user_row(user))
+    return _render_user_row(request, user)
 
 
 @router.post("/users/{user_id}/unban", response_class=HTMLResponse)
 async def unban_user(
     user_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -759,14 +703,14 @@ async def unban_user(
     user.is_banned = False
     await db.commit()
     await db.refresh(user)
-    return HTMLResponse(_render_user_row(user))
+    return _render_user_row(request, user)
 
 
 @router.post("/users/{user_id}/reset-password", response_class=HTMLResponse)
 async def reset_user_password(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -789,7 +733,7 @@ async def reset_user_password(
 async def generate_api_key(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -815,7 +759,7 @@ async def generate_api_key(
 async def delete_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -840,7 +784,7 @@ async def moderation_log_page(
     cursor: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     stmt = (
         select(ModerationLog)
@@ -875,6 +819,7 @@ async def moderation_log_page(
         "admin/log.html",
         {
             "request": request,
+            "current_user": admin_user,
             "entries": entries,
             "next_cursor": next_cursor,
             "prev_cursor": cursor,
@@ -899,12 +844,12 @@ async def _load_personality(db: AsyncSession) -> dict:
 async def voice_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     personality = await _load_personality(db)
     return templates.TemplateResponse(
         "admin/voice.html",
-        {"request": request, "personality": personality, "message": None},
+        {"request": request, "current_user": admin_user, "personality": personality, "message": None},
     )
 
 
@@ -912,7 +857,7 @@ async def voice_page(
 async def voice_save(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     form_data = await request.form()
 
@@ -946,7 +891,7 @@ async def voice_save(
 @router.post("/voice/preview", response_class=HTMLResponse)
 async def voice_preview(
     request: Request,
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     form_data = await request.form()
 
@@ -1012,12 +957,12 @@ async def _load_email_config(db: AsyncSession) -> dict:
 async def email_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     email_config = await _load_email_config(db)
     return templates.TemplateResponse(
         "admin/email.html",
-        {"request": request, "email_config": email_config,
+        {"request": request, "current_user": admin_user, "email_config": email_config,
          "message": None, "error": None},
     )
 
@@ -1026,7 +971,7 @@ async def email_page(
 async def email_save(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     form_data = await request.form()
 
@@ -1052,7 +997,7 @@ async def email_save(
 
     return templates.TemplateResponse(
         "admin/email.html",
-        {"request": request, "email_config": email_config,
+        {"request": request, "current_user": admin_user, "email_config": email_config,
          "message": "Email settings saved.", "error": None},
     )
 
@@ -1060,7 +1005,7 @@ async def email_save(
 @router.post("/email/test", response_class=HTMLResponse)
 async def email_test(
     request: Request,
-    _user: User = Depends(get_admin_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     form_data = await request.form()
     to_email = form_data.get("test_email", "").strip()

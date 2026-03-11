@@ -73,7 +73,9 @@ async def _get_agent_by_api_key(
         return user
     # Fall back to global key
     if x_api_key == settings.AGENT_API_KEY:
-        result = await db.execute(select(User).where(User.role == UserRole.AGENT))
+        result = await db.execute(
+            select(User).where(User.role == UserRole.AGENT).limit(1)
+        )
         return result.scalar_one_or_none()
     return None
 
