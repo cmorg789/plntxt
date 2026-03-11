@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
@@ -36,6 +37,7 @@ class Memory(UUIDMixin, TimestampMixin, Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String(100)))
     expires_at: Mapped[datetime | None]
     public: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    embedding = mapped_column(Vector(256), nullable=True)
 
     source_links: Mapped[list["MemoryLink"]] = relationship(
         foreign_keys="MemoryLink.source_id", back_populates="source"

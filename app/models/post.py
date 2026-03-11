@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
@@ -27,6 +28,7 @@ class Post(UUIDMixin, TimestampMixin, Base):
     view_count: Mapped[int] = mapped_column(default=0, server_default="0")
     series_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("series.id", ondelete="SET NULL"))
     series_position: Mapped[int | None] = mapped_column(Integer)
+    embedding = mapped_column(Vector(256), nullable=True)
 
     series: Mapped["Series | None"] = relationship(back_populates="posts")  # noqa: F821
     revisions: Mapped[list["PostRevision"]] = relationship(back_populates="post", order_by="PostRevision.revision_number.desc()")  # noqa: F821

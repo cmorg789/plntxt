@@ -1,13 +1,12 @@
 from datetime import datetime, timedelta
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from slugify import slugify
-from sqlalchemy import Text, case, cast, func, literal, or_, select, update as sql_update
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_admin_user, get_agent_or_admin, get_optional_user
 from app.db import get_db
+from app.services.embeddings import embed_query, embed_text
 from app.models.comment import Comment, CommentStatus
 from app.models.post import Post, PostStatus
 from app.models.revision import PostRevision
@@ -83,21 +82,14 @@ async def search_posts(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    like_pattern = f"%{q}%"
-    title_sim = func.similarity(Post.title, q)
-    body_sim = func.similarity(Post.body, q)
+    query_vec = embed_query(q)
     stmt = (
         select(Post)
         .where(
             Post.status == PostStatus.PUBLISHED,
-            or_(
-                title_sim > 0.1,
-                body_sim > 0.1,
-                Post.title.ilike(like_pattern),
-                Post.body.ilike(like_pattern),
-            ),
+            Post.embedding.isnot(None),
         )
-        .order_by((title_sim + body_sim).desc())
+        .order_by(Post.embedding.cosine_distance(query_vec))
         .limit(limit)
     )
     result = await db.execute(stmt)
@@ -206,6 +198,7 @@ async def create_post(
 
     published_at = datetime.utcnow() if data.status == PostStatus.PUBLISHED else None
 
+    embedding = embed_text(data.body)
     post = Post(
         title=data.title,
         slug=slug,
@@ -213,6 +206,7 @@ async def create_post(
         tags=data.tags,
         status=data.status,
         published_at=published_at,
+        embedding=embedding,
     )
     db.add(post)
     await db.commit()
@@ -248,6 +242,9 @@ async def update_post(
 
     for field, value in update_data.items():
         setattr(post, field, value)
+
+    if "body" in update_data:
+        post.embedding = embed_text(post.body)
 
     # Set published_at when transitioning to PUBLISHED for the first time
     if post.status == PostStatus.PUBLISHED and post.published_at is None:

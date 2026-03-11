@@ -2,12 +2,13 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_agent_user
 from app.db import get_db
 from app.models.memory import Memory, MemoryCategory, MemoryLink, MemoryPostLink
+from app.services.embeddings import embed_query, embed_text
 from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post
 from app.models.schemas.memory import (
@@ -85,11 +86,11 @@ async def search_memories(
     _user: User = Depends(get_agent_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[MemoryResponse]:
-    similarity = func.word_similarity(Memory.content, q)
+    query_vec = embed_query(q)
     stmt = (
         select(Memory)
-        .where(Memory.content.op("%%")(q))
-        .order_by(desc(similarity))
+        .where(Memory.embedding.isnot(None))
+        .order_by(Memory.embedding.cosine_distance(query_vec))
         .limit(limit)
     )
 
@@ -122,12 +123,14 @@ async def create_memory(
     db: AsyncSession = Depends(get_db),
 ) -> MemoryResponse:
     public = body.public if body.public is not None else (body.category != MemoryCategory.PROCEDURAL)
+    embedding = embed_text(body.content)
     memory = Memory(
         category=body.category,
         content=body.content,
         tags=body.tags,
         expires_at=body.expires_at,
         public=public,
+        embedding=embedding,
     )
     db.add(memory)
     await db.commit()
@@ -150,6 +153,9 @@ async def update_memory(
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(memory, field, value)
+
+    if "content" in update_data:
+        memory.embedding = embed_text(memory.content)
 
     await db.commit()
     await db.refresh(memory)

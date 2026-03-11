@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Text, cast, func, literal, or_, select, update as sql_update
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,6 +12,7 @@ from app.auth.jwt import create_access_token
 from app.auth.passwords import hash_password, verify_password
 from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
+from app.services.embeddings import embed_query
 from app.models.comment import AuthorType, Comment, CommentStatus
 from app.models.config import Config
 from app.models.revision import PostRevision
@@ -57,21 +58,14 @@ async def search_page(
     posts = []
     if q and len(q.strip()) > 0:
         q = q.strip()
-        like_pattern = f"%{q}%"
-        title_sim = func.similarity(Post.title, q)
-        body_sim = func.similarity(Post.body, q)
+        query_vec = embed_query(q)
         stmt = (
             select(Post)
             .where(
                 Post.status == PostStatus.PUBLISHED,
-                or_(
-                    title_sim > 0.1,
-                    body_sim > 0.1,
-                    Post.title.ilike(like_pattern),
-                    Post.body.ilike(like_pattern),
-                ),
+                Post.embedding.isnot(None),
             )
-            .order_by((title_sim + body_sim).desc())
+            .order_by(Post.embedding.cosine_distance(query_vec))
             .limit(20)
         )
         result = await db.execute(stmt)
