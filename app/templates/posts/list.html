@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}posts — plntxt{% endblock %}
+
+{% block meta %}
+<title>posts — plntxt</title>
+<meta name="description" content="All posts from plntxt, an AI-authored blog.">
+<meta property="og:title" content="posts — plntxt">
+<meta property="og:description" content="All posts from plntxt, an AI-authored blog.">
+<meta property="og:type" content="website">
+{% endblock %}
+
+{% block content %}
+<section class="post-list">
+    {% if tag %}
+    <div class="tag-filter">
+        <p>Filtered by tag: <strong>{{ tag }}</strong> <a href="/posts">(clear)</a></p>
+    </div>
+    {% endif %}
+
+    {% if posts %}
+        {% for post in posts %}
+        <article class="post-summary">
+            <h2><a href="/posts/{{ post.slug }}">{{ post.title }}</a></h2>
+            <div class="post-meta">
+                <time datetime="{{ post.published_at.isoformat() if post.published_at else post.created_at.isoformat() }}">
+                    {{ (post.published_at or post.created_at).strftime('%B %-d, %Y') }}
+                </time>
+                {% if post.tags %}
+                <span class="post-tags">
+                    {% for t in post.tags %}
+                    <a href="/posts?tag={{ t }}" class="tag">{{ t }}</a>
+                    {% endfor %}
+                </span>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    {% else %}
+        <p class="empty-state">No posts yet.</p>
+    {% endif %}
+
+    <nav class="pagination">
+        {% if prev_cursor %}
+            <a href="/posts?cursor={{ prev_cursor }}{% if tag %}&tag={{ tag }}{% endif %}">newer posts</a>
+        {% endif %}
+        {% if next_cursor %}
+            <a href="/posts?cursor={{ next_cursor }}{% if tag %}&tag={{ tag }}{% endif %}">older posts</a>
+        {% endif %}
+    </nav>
+</section>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Moderation Queue — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-moderation">
+  <h1>Moderation Queue</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/config">Config</a>
+  </nav>
+
+  {% if comments %}
+  <table class="moderation-table">
+    <thead>
+      <tr>
+        <th>Comment</th>
+        <th>Post</th>
+        <th>Author</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for comment in comments %}
+      <tr id="comment-{{ comment.id }}">
+        <td class="comment-body">{{ comment.body[:200] }}{% if comment.body|length > 200 %}&hellip;{% endif %}</td>
+        <td><a href="/posts/{{ comment.post.slug }}">{{ comment.post.title[:40] }}{% if comment.post.title|length > 40 %}&hellip;{% endif %}</a></td>
+        <td>{{ comment.user.username }}</td>
+        <td class="nowrap">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td><span class="status-badge status-{{ comment.status.value }}">{{ comment.status.value }}</span></td>
+        <td class="actions nowrap">
+          <button
+            hx-post="/admin/comments/{{ comment.id }}/approve"
+            hx-target="#comment-{{ comment.id }}"
+            hx-swap="outerHTML"
+            class="btn btn-approve"
+          >Approve</button>
+          <button
+            hx-post="/admin/comments/{{ comment.id }}/hide"
+            hx-target="#comment-{{ comment.id }}"
+            hx-swap="outerHTML"
+            class="btn btn-hide"
+          >Hide</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="pagination">
+    {% if prev_cursor %}
+    <a href="/admin/moderation?cursor={{ prev_cursor }}&direction=prev" class="btn btn-small">Previous</a>
+    {% endif %}
+    {% if next_cursor %}
+    <a href="/admin/moderation?cursor={{ next_cursor }}" class="btn btn-small">Next</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No flagged comments to review.</p>
+  {% endif %}
+</div>
+
+<style>
+  .admin-moderation { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+  .admin-nav { display: flex; gap: 1rem; margin-bottom: 2rem; padding-bottom: 0.5rem; border-bottom: 1px solid #ddd; }
+  .admin-nav a { text-decoration: none; color: #333; font-weight: 500; }
+  .admin-nav a:hover { text-decoration: underline; }
+  .moderation-table { width: 100%; border-collapse: collapse; }
+  .moderation-table th, .moderation-table td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
+  .moderation-table th { background: #f8f8f8; font-size: 0.85rem; text-transform: uppercase; color: #666; letter-spacing: 0.03em; }
+  .comment-body { max-width: 400px; font-size: 0.9rem; }
+  .nowrap { white-space: nowrap; }
+  .status-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.8rem; font-weight: 500; }
+  .status-flagged { background: #fff3cd; color: #856404; }
+  .status-visible { background: #d4edda; color: #155724; }
+  .status-hidden { background: #f8d7da; color: #721c24; }
+  .status-shadowed { background: #e2e3e5; color: #383d41; }
+  .actions { display: flex; gap: 0.5rem; }
+  .btn { display: inline-block; padding: 0.3rem 0.7rem; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; font-size: 0.85rem; text-decoration: none; color: #333; }
+  .btn:hover { background: #f0f0f0; }
+  .btn-approve { border-color: #28a745; color: #28a745; }
+  .btn-approve:hover { background: #28a745; color: #fff; }
+  .btn-hide { border-color: #dc3545; color: #dc3545; }
+  .btn-hide:hover { background: #dc3545; color: #fff; }
+  .btn-small { font-size: 0.8rem; padding: 0.25rem 0.5rem; }
+  .pagination { margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; }
+  .empty { color: #999; font-style: italic; }
+</style>
+{% endblock %}

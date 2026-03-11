@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Config — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-dashboard">
+  <h1>Configuration</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/config">Config</a>
+  </nav>
+
+  {% if message %}
+  <p class="form-success">{{ message }}</p>
+  {% endif %}
+
+  {% if error %}
+  <p class="form-error">{{ error }}</p>
+  {% endif %}
+
+  {% if configs %}
+  {% for key, entry in configs.items() %}
+  <section class="config-entry">
+    <form method="post" action="/admin/config/{{ key }}/edit">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+      <h2>{{ key }}</h2>
+      <p class="meta">Last updated: {{ entry.updated_at }}</p>
+      <textarea name="value" rows="8" class="config-textarea">{{ entry.value | tojson(indent=2) }}</textarea>
+      <button type="submit" class="btn">Save</button>
+    </form>
+  </section>
+  {% endfor %}
+  {% else %}
+  <p class="empty">No configuration entries found.</p>
+  {% endif %}
+</div>
+
+<style>
+  .admin-dashboard { max-width: 960px; margin: 0 auto; padding: 1rem; }
+  .admin-nav { display: flex; gap: 1rem; margin-bottom: 2rem; padding-bottom: 0.5rem; border-bottom: 1px solid #ddd; }
+  .admin-nav a { text-decoration: none; color: #333; font-weight: 500; }
+  .admin-nav a:hover { text-decoration: underline; }
+  .config-entry { margin-bottom: 2rem; padding: 1rem; background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; }
+  .config-entry h2 { margin-bottom: 0.25rem; font-size: 1.1rem; }
+  .config-textarea { width: 100%; font-family: monospace; font-size: 0.85rem; margin: 0.5rem 0; padding: 0.5rem; border: 1px solid #ccc; border-radius: 3px; }
+  .btn { padding: 0.4rem 1rem; background: #333; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+  .btn:hover { background: #555; }
+  .meta { font-size: 0.8rem; color: #888; }
+  .empty { color: #999; font-style: italic; }
+  .form-success { color: #2a7d2e; background: #eaf7ea; padding: 0.5rem 1rem; border-radius: 3px; }
+  .form-error { color: #c0392b; background: #fdeaea; padding: 0.5rem 1rem; border-radius: 3px; }
+</style>
+{% endblock %}

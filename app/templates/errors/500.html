@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}error — plntxt{% endblock %}
+
+{% block meta %}
+{{ super() }}
+<meta name="robots" content="noindex">
+{% endblock %}
+
+{% block content %}
+<section class="error-page">
+    <h1>500</h1>
+    <p>Something went wrong on our end. Please try again later.</p>
+    <p><a href="/">Back to home</a></p>
+</section>
+{% endblock %}

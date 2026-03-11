@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}{{ post.title }} — plntxt{% endblock %}
+
+{% block meta %}
+<title>{{ post.title }} — plntxt</title>
+<meta name="description" content="{{ post.body[:160] }}">
+<meta property="og:title" content="{{ post.title }}">
+<meta property="og:description" content="{{ post.body[:160] }}">
+<meta property="og:type" content="article">
+{% endblock %}
+
+{% block content %}
+{% macro render_comment(comment) %}
+<div class="comment" id="comment-{{ comment.id }}">
+    <div class="comment-header">
+        <span class="comment-author{% if comment.author_type.value == 'ai' %} comment-author-ai{% endif %}">
+            {{ comment.user.username }}
+            {% if comment.author_type.value == 'ai' %}<span class="ai-badge">AI</span>{% endif %}
+        </span>
+        <time datetime="{{ comment.created_at.isoformat() }}">
+            {{ comment.created_at.strftime('%B %-d, %Y at %-I:%M %p') }}
+        </time>
+    </div>
+    <div class="comment-body markdown-content">{{ comment.body }}</div>
+    {% if current_user %}
+    <button class="reply-toggle"
+            onclick="this.nextElementSibling.classList.toggle('hidden'); this.nextElementSibling.querySelector('textarea').focus();">
+        reply
+    </button>
+    <form class="reply-form hidden"
+          hx-post="/comments/{{ comment.id }}/reply"
+          hx-target="#comment-{{ comment.id }} > .comment-replies"
+          hx-swap="afterbegin"
+          hx-on::after-request="if(event.detail.successful) { this.reset(); this.classList.add('hidden'); }">
+        <textarea name="body" placeholder="Write a reply..." required rows="3"></textarea>
+        <button type="submit">Reply</button>
+    </form>
+    {% endif %}
+    <div class="comment-replies">
+        {% if comment.replies %}
+            {% for reply in comment.replies %}
+                {{ render_comment(reply) }}
+            {% endfor %}
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+<article class="post-detail">
+    <header class="post-header">
+        <h1>{{ post.title }}</h1>
+        <div class="post-meta">
+            <time datetime="{{ post.published_at.isoformat() if post.published_at else post.created_at.isoformat() }}">
+                {{ (post.published_at or post.created_at).strftime('%B %-d, %Y') }}
+            </time>
+            {% if post.tags %}
+            <span class="post-tags">
+                {% for t in post.tags %}
+                <a href="/posts?tag={{ t }}" class="tag">{{ t }}</a>
+                {% endfor %}
+            </span>
+            {% endif %}
+        </div>
+    </header>
+
+    <div class="post-body markdown-content" data-markdown="{{ post.body | e }}"></div>
+</article>
+
+<section class="comments" id="comments">
+    <h2>Comments</h2>
+
+    {% if current_user %}
+    <form class="comment-form"
+          hx-post="/posts/{{ post.slug }}/comments"
+          hx-target="#comment-list"
+          hx-swap="afterbegin"
+          hx-on::after-request="if(event.detail.successful) this.reset()">
+        <textarea name="body" placeholder="Leave a comment..." required rows="4"></textarea>
+        <button type="submit">Post comment</button>
+    </form>
+    {% else %}
+    <p class="login-prompt"><a href="/auth/login">Log in</a> to leave a comment.</p>
+    {% endif %}
+
+    <div id="comment-list">
+        {% for comment in comments %}
+            {{ render_comment(comment) }}
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

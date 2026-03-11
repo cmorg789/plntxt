@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-dashboard">
+  <h1>Admin Dashboard</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/config">Config</a>
+  </nav>
+
+  <section class="stats-cards">
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.post_count }}</span>
+      <span class="stat-label">Posts</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.comment_count }}</span>
+      <span class="stat-label">Comments</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.pending_comments }}</span>
+      <span class="stat-label">Pending</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.flagged_comments }}</span>
+      <span class="stat-label">Flagged</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.user_count }}</span>
+      <span class="stat-label">Users</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.memory_count }}</span>
+      <span class="stat-label">Memories</span>
+    </div>
+  </section>
+
+  <div class="dashboard-columns">
+    <section class="recent-posts">
+      <h2>Recent Posts</h2>
+      {% if recent_posts %}
+      <ul>
+        {% for post in recent_posts %}
+        <li>
+          <a href="/posts/{{ post.slug }}">{{ post.title }}</a>
+          <span class="meta">
+            {{ post.status.value }}
+            &middot;
+            {{ post.created_at.strftime('%Y-%m-%d') }}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">No posts yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="recent-flagged">
+      <h2>Recent Flagged Comments</h2>
+      {% if flagged_comments %}
+      <ul>
+        {% for comment in flagged_comments %}
+        <li>
+          <div class="flagged-body">{{ comment.body[:120] }}{% if comment.body|length > 120 %}&hellip;{% endif %}</div>
+          <span class="meta">
+            by {{ comment.user.username }}
+            on <a href="/posts/{{ comment.post.slug }}">{{ comment.post.title }}</a>
+            &middot;
+            {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      <a href="/admin/moderation" class="view-all">View all flagged comments</a>
+      {% else %}
+      <p class="empty">No flagged comments.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+<style>
+  .admin-dashboard { max-width: 960px; margin: 0 auto; padding: 1rem; }
+  .admin-nav { display: flex; gap: 1rem; margin-bottom: 2rem; padding-bottom: 0.5rem; border-bottom: 1px solid #ddd; }
+  .admin-nav a { text-decoration: none; color: #333; font-weight: 500; }
+  .admin-nav a:hover { text-decoration: underline; }
+  .stats-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .stat-card { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 1rem; text-align: center; }
+  .stat-value { display: block; font-size: 1.8rem; font-weight: 700; color: #222; }
+  .stat-label { display: block; font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+  .dashboard-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+  @media (max-width: 640px) { .dashboard-columns { grid-template-columns: 1fr; } }
+  .recent-posts ul, .recent-flagged ul { list-style: none; padding: 0; }
+  .recent-posts li, .recent-flagged li { margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid #eee; }
+  .flagged-body { font-size: 0.9rem; margin-bottom: 0.25rem; }
+  .meta { font-size: 0.8rem; color: #888; }
+  .view-all { display: inline-block; margin-top: 0.5rem; font-size: 0.85rem; }
+  .empty { color: #999; font-style: italic; }
+</style>
+{% endblock %}

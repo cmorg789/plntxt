@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-plntxt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plntxt}
+      POSTGRES_DB: ${POSTGRES_DB:-plntxt}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./app:/code/app
+      - ./media:/code/media
+
+  agent:
+    build: .
+    command: python -m agent.cli run-all
+    env_file:
+      - .env
+    depends_on:
+      - app
+      - db
+    volumes:
+      - ./agent:/code/agent
+
+volumes:
+  postgres-data:

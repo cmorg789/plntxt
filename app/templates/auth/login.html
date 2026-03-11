@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Login — plntxt{% endblock %}
+
+{% block content %}
+<div class="auth-form">
+    <h1>Login</h1>
+
+    {% if error %}
+    <p class="form-error">{{ error }}</p>
+    {% endif %}
+
+    <form method="post" action="/auth/login/form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required
+               value="{{ email or '' }}" autocomplete="email">
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required
+               autocomplete="current-password">
+
+        <button type="submit">Login</button>
+    </form>
+
+    <p class="auth-alt">Don't have an account? <a href="/auth/register">Register</a></p>
+</div>
+{% endblock %}
