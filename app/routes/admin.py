@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.responses import RedirectResponse
 
 from app.auth.dependencies import get_admin_user
 from app.db import get_db
@@ -342,7 +343,11 @@ async def config_page(
     _user: User = Depends(get_admin_user),
 ):
     result = await db.execute(select(Config))
-    configs = {c.key: {"value": c.value, "updated_at": c.updated_at.isoformat()} for c in result.scalars().all()}
+    configs = {
+        c.key: {"value": c.value, "updated_at": c.updated_at.isoformat()}
+        for c in result.scalars().all()
+        if c.key != "agent_personality"
+    }
     csrf_token = request.cookies.get("csrf_token", "")
     return templates.TemplateResponse(
         "admin/config.html",
@@ -389,8 +394,7 @@ async def config_edit_form(
     config.value = updated
     await db.commit()
 
-    from starlette.responses import RedirectResponse as _Redirect
-    return _Redirect(url="/admin/config", status_code=302)
+    return RedirectResponse(url="/admin/config", status_code=302)
 
 
 @router.get("/config/json")
@@ -724,4 +728,117 @@ async def moderation_log_page(
             "next_cursor": next_cursor,
             "prev_cursor": cursor,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Voice tuning (HTML)
+# ---------------------------------------------------------------------------
+
+
+async def _load_personality(db: AsyncSession) -> dict:
+    result = await db.execute(select(Config).where(Config.key == "agent_personality"))
+    config = result.scalar_one_or_none()
+    if config is None:
+        return {}
+    return config.value if isinstance(config.value, dict) else {}
+
+
+@router.get("/voice", response_class=HTMLResponse)
+async def voice_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    personality = await _load_personality(db)
+    return templates.TemplateResponse(
+        "admin/voice.html",
+        {"request": request, "personality": personality, "message": None},
+    )
+
+
+@router.post("/voice", response_class=HTMLResponse)
+async def voice_save(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    form_data = await request.form()
+
+    # Parse comma-separated lists
+    interests_raw = form_data.get("interests", "")
+    avoid_raw = form_data.get("avoid", "")
+
+    personality = {
+        "system_prompt": form_data.get("system_prompt", ""),
+        "writing_style": form_data.get("writing_style", ""),
+        "tone": form_data.get("tone", ""),
+        "interests": [s.strip() for s in interests_raw.split(",") if s.strip()],
+        "avoid": [s.strip() for s in avoid_raw.split(",") if s.strip()],
+    }
+
+    result = await db.execute(select(Config).where(Config.key == "agent_personality"))
+    config = result.scalar_one_or_none()
+    if config is None:
+        config = Config(key="agent_personality", value=personality)
+        db.add(config)
+    else:
+        # Preserve any existing keys not managed by this form
+        updated = dict(config.value) if isinstance(config.value, dict) else {}
+        updated.update(personality)
+        config.value = updated
+
+    await db.commit()
+    return RedirectResponse(url="/admin/voice", status_code=302)
+
+
+@router.post("/voice/preview", response_class=HTMLResponse)
+async def voice_preview(
+    request: Request,
+    _user: User = Depends(get_admin_user),
+):
+    form_data = await request.form()
+
+    system_prompt = form_data.get("system_prompt", "")
+    writing_style = form_data.get("writing_style", "")
+    tone = form_data.get("tone", "")
+    interests = form_data.get("interests", "")
+    avoid = form_data.get("avoid", "")
+    topic = form_data.get("preview_topic", "").strip()
+
+    if not topic:
+        return HTMLResponse('<p class="form-error">Enter a topic to preview.</p>')
+
+    # Build a personality description for the prompt
+    personality_parts = []
+    if system_prompt:
+        personality_parts.append(system_prompt)
+    if writing_style:
+        personality_parts.append(f"Writing style: {writing_style}")
+    if tone:
+        personality_parts.append(f"Tone: {tone}")
+    if interests:
+        personality_parts.append(f"Interests: {interests}")
+    if avoid:
+        personality_parts.append(f"Avoid: {avoid}")
+
+    system = "\n".join(personality_parts) if personality_parts else "You are a blog author."
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=300,
+            system=system,
+            messages=[
+                {"role": "user", "content": f"Write a single blog paragraph about: {topic}"}
+            ],
+        )
+        text = message.content[0].text
+    except Exception as e:
+        return HTMLResponse(f'<p class="form-error">Preview failed: {e}</p>')
+
+    return HTMLResponse(
+        f'<div class="preview-sample"><p>{text}</p></div>'
     )
