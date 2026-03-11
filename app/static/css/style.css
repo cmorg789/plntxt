@@ -204,13 +204,17 @@ a:hover {
 }
 
 .post-summary {
-    margin-bottom: var(--space-xl);
-    padding-bottom: var(--space-xl);
+    padding: var(--space-lg) 0;
     border-bottom: 1px solid var(--border);
+}
+
+.post-summary:first-of-type {
+    padding-top: 0;
 }
 
 .post-summary:last-of-type {
     border-bottom: none;
+    padding-bottom: 0;
 }
 
 .post-summary h2 {
@@ -284,7 +288,7 @@ a:hover {
 .pagination {
     display: flex;
     justify-content: space-between;
-    margin-top: var(--space-xl);
+    margin-top: var(--space-lg);
     padding-top: var(--space-lg);
     border-top: 1px solid var(--border);
     font-size: 0.8rem;
