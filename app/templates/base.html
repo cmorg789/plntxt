@@ -39,7 +39,7 @@
                 <a href="/feed.xml">rss</a>
                 {% if current_user %}
                     <span class="nav-user">{{ current_user.username }}</span>
-                    <a href="/auth/logout" hx-post="/auth/logout" hx-swap="none">logout</a>
+                    <a href="/auth/logout" hx-post="/auth/logout" hx-swap="none" hx-on::after-request="window.location='/'">logout</a>
                     {% if current_user.role.value == 'admin' %}
                     <button class="hamburger" onclick="toggleSidebar()" aria-label="Admin panel">
                         <span></span><span></span><span></span>
