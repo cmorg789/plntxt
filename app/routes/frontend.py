@@ -12,6 +12,11 @@ from app.auth.jwt import create_access_token
 from app.auth.passwords import hash_password, verify_password
 from app.auth.session import build_session, set_session_cookie
 from app.db import get_db
+from app.email import (
+    generate_verification_token,
+    send_verification_email,
+    verification_token_expiry,
+)
 from app.services.embeddings import embed_query
 from app.models.comment import AuthorType, Comment, CommentStatus
 from app.models.config import Config
@@ -286,6 +291,9 @@ async def create_comment_form(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if not user.email_verified and user.role == UserRole.USER:
+        raise HTTPException(status_code=403, detail="Please verify your email before commenting.")
+
     result = await db.execute(select(Post).where(Post.slug == slug))
     post = result.scalar_one_or_none()
     if post is None:
@@ -315,6 +323,9 @@ async def reply_comment_form(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if not user.email_verified and user.role == UserRole.USER:
+        raise HTTPException(status_code=403, detail="Please verify your email before commenting.")
+
     result = await db.execute(select(Comment).where(Comment.id == comment_id))
     parent = result.scalar_one_or_none()
     if parent is None:
@@ -447,18 +458,109 @@ async def register_submit(
             status_code=409,
         )
 
+    token = generate_verification_token()
     user = User(
         username=username,
         email=email,
         password_hash=hash_password(password),
+        verification_token=token,
+        verification_token_expires_at=verification_token_expiry(),
     )
     db.add(user)
     await db.flush()
 
-    token = create_access_token(user.id)
-    db.add(build_session(user.id, token))
+    session_token = create_access_token(user.id)
+    db.add(build_session(user.id, session_token))
     await db.commit()
 
-    response = RedirectResponse(url="/posts", status_code=302)
-    set_session_cookie(response, token)
+    await send_verification_email(email, username, token)
+
+    response = RedirectResponse(url="/auth/verify-pending", status_code=302)
+    set_session_cookie(response, session_token)
     return response
+
+
+@router.get("/auth/verify-pending")
+async def verify_pending_page(
+    request: Request,
+    current_user: User | None = Depends(get_optional_user),
+):
+    if current_user and current_user.email_verified:
+        return RedirectResponse(url="/posts", status_code=302)
+    csrf_token = request.cookies.get("csrf_token", "")
+    email = current_user.email if current_user else ""
+    return templates.TemplateResponse(
+        "auth/verify_pending.html",
+        {"request": request, "csrf_token": csrf_token, "email": email,
+         "success": None, "error": None, "current_user": current_user},
+    )
+
+
+@router.get("/auth/verify")
+async def verify_email(
+    request: Request,
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    from datetime import datetime, timezone
+
+    result = await db.execute(
+        select(User).where(User.verification_token == token)
+    )
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        return templates.TemplateResponse(
+            "auth/verify_result.html",
+            {"request": request, "success": None,
+             "error": "Invalid verification link.", "current_user": current_user},
+            status_code=400,
+        )
+
+    if user.verification_token_expires_at and user.verification_token_expires_at < datetime.now(timezone.utc):
+        return templates.TemplateResponse(
+            "auth/verify_result.html",
+            {"request": request, "success": None,
+             "error": "This verification link has expired. Please log in and request a new one.",
+             "current_user": current_user},
+            status_code=400,
+        )
+
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires_at = None
+    await db.commit()
+
+    return templates.TemplateResponse(
+        "auth/verify_result.html",
+        {"request": request,
+         "success": "Your email has been verified. You're all set!",
+         "error": None, "current_user": current_user},
+    )
+
+
+@router.post("/auth/resend-verification")
+async def resend_verification(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    csrf_token = request.cookies.get("csrf_token", "")
+
+    if current_user.email_verified:
+        return RedirectResponse(url="/posts", status_code=302)
+
+    token = generate_verification_token()
+    current_user.verification_token = token
+    current_user.verification_token_expires_at = verification_token_expiry()
+    await db.commit()
+
+    await send_verification_email(current_user.email, current_user.username, token)
+
+    return templates.TemplateResponse(
+        "auth/verify_pending.html",
+        {"request": request, "csrf_token": csrf_token, "email": current_user.email,
+         "success": "Verification email resent.", "error": None,
+         "current_user": current_user},
+    )

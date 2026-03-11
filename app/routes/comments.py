@@ -95,6 +95,12 @@ async def create_comment(
 ) -> CommentResponse:
     post = await _get_post_by_slug(slug, db)
 
+    if not user.email_verified and user.role == UserRole.USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before commenting.",
+        )
+
     author_type = AuthorType.AI if user.role == UserRole.AGENT else AuthorType.HUMAN
     comment = Comment(
         post_id=post.id,
@@ -121,6 +127,12 @@ async def reply_to_comment(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentResponse:
+    if not user.email_verified and user.role == UserRole.USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before commenting.",
+        )
+
     result = await db.execute(select(Comment).where(Comment.id == comment_id))
     parent = result.scalar_one_or_none()
     if parent is None:

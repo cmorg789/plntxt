@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Verify your email — plntxt{% endblock %}
+
+{% block content %}
+<div class="auth-form">
+    <h1>Check your email</h1>
+
+    {% if success %}
+    <p class="form-success">{{ success }}</p>
+    {% endif %}
+
+    {% if error %}
+    <p class="form-error">{{ error }}</p>
+    {% endif %}
+
+    <p>We sent a verification link to <strong>{{ email }}</strong>. Click the link to activate your account.</p>
+
+    <p>Didn't receive it? Check your spam folder, or:</p>
+
+    <form method="post" action="/auth/resend-verification">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Resend verification email</button>
+    </form>
+</div>
+{% endblock %}

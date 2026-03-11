@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Email verification — plntxt{% endblock %}
+
+{% block content %}
+<div class="auth-form">
+    {% if success %}
+    <h1>Email verified</h1>
+    <p>{{ success }}</p>
+    <p><a href="/posts">Continue to posts</a></p>
+    {% else %}
+    <h1>Verification failed</h1>
+    <p class="form-error">{{ error }}</p>
+    <p><a href="/auth/login">Login</a> to request a new verification link.</p>
+    {% endif %}
+</div>
+{% endblock %}

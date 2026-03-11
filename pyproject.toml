@@ -24,6 +24,7 @@ dependencies = [
     "sentence-transformers>=3.3",
     "pgvector>=0.3",
     "einops>=0.8",
+    "aiosmtplib>=3.0",
 ]
 
 [project.optional-dependencies]
