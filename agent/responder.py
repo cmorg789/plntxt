@@ -10,9 +10,16 @@ from __future__ import annotations
 import json
 import logging
 
-from anthropic import beta_async_tool
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    TextBlock,
+    create_sdk_mcp_server,
+    query,
+    tool,
+)
 
-from agent.client import get_anthropic_client, load_agent_config
+from agent.client import load_agent_config
 from agent.tools import (
     fetch_all_pending_comments,
     get_post,
@@ -20,7 +27,6 @@ from agent.tools import (
     reply_to_comment,
     search_memories,
 )
-from agent.validation import validate_agent_output
 
 logger = logging.getLogger("plntxt.agent.responder")
 
@@ -50,60 +56,41 @@ Be concise but thoughtful. Engage with the actual substance. Don't be sycophanti
 """
 
 
-@beta_async_tool
-async def tool_reply_to_comment(comment_id: str, body: str) -> str:
-    """Post a reply to a comment.
-
-    Args:
-        comment_id: The UUID of the comment to reply to.
-        body: Your reply text in markdown.
-    """
-    result = await reply_to_comment(comment_id=comment_id, body=body)
-    return json.dumps({"id": result["id"], "body": result["body"][:200]})
+@tool("reply_to_comment", "Post a reply to a comment", {"comment_id": str, "body": str})
+async def tool_reply_to_comment(args):
+    result = await reply_to_comment(comment_id=args["comment_id"], body=args["body"])
+    return {"content": [{"type": "text", "text": json.dumps({
+        "id": result["id"], "body": result["body"][:200],
+    })}]}
 
 
-@beta_async_tool
-async def tool_skip_comment(comment_id: str, reason: str) -> str:
-    """Mark a comment as skipped (no response needed).
-
-    Args:
-        comment_id: The UUID of the comment to skip.
-        reason: Brief reason for skipping.
-    """
-    await moderate_comment(comment_id=comment_id, response_status="skip")
-    return json.dumps({"status": "skipped", "reason": reason})
+@tool("skip_comment", "Mark a comment as skipped (no response needed)", {"comment_id": str, "reason": str})
+async def tool_skip_comment(args):
+    await moderate_comment(comment_id=args["comment_id"], response_status="skip")
+    return {"content": [{"type": "text", "text": json.dumps({
+        "status": "skipped", "reason": args["reason"],
+    })}]}
 
 
-@beta_async_tool
-async def tool_search_memories(query: str, limit: int = 5) -> str:
-    """Search memories for context on a topic being discussed.
-
-    Args:
-        query: Search query.
-        limit: Max results.
-    """
-    results = await search_memories(q=query, limit=limit)
+@tool("search_memories", "Search memories for context on a topic being discussed", {"query": str, "limit": int})
+async def tool_search_memories(args):
+    results = await search_memories(q=args["query"], limit=args.get("limit", 5))
     if not results:
-        return "No matching memories found."
+        return {"content": [{"type": "text", "text": "No matching memories found."}]}
     lines = []
     for m in results:
         lines.append(f"- [{m['category']}] {m['content'][:300]}")
-    return "\n".join(lines)
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
-@beta_async_tool
-async def tool_get_post_context(slug: str) -> str:
-    """Get the full post for context when responding to a comment.
-
-    Args:
-        slug: The post slug.
-    """
-    post = await get_post(slug)
-    return json.dumps({
+@tool("get_post_context", "Get the full post for context when responding to a comment", {"slug": str})
+async def tool_get_post_context(args):
+    post = await get_post(args["slug"])
+    return {"content": [{"type": "text", "text": json.dumps({
         "title": post["title"],
         "body": post["body"][:2000],
         "tags": post.get("tags", []),
-    })
+    })}]}
 
 
 RESPONDER_TOOLS = [
@@ -113,6 +100,13 @@ RESPONDER_TOOLS = [
     tool_get_post_context,
 ]
 
+SERVER_NAME = "plntxt"
+
+TOOL_NAMES = [
+    "reply_to_comment", "skip_comment",
+    "search_memories", "get_post_context",
+]
+
 
 async def run_responder() -> None:
     """Execute one run of the responder agent: process all pending comments."""
@@ -120,7 +114,6 @@ async def run_responder() -> None:
 
     config = await load_agent_config()
     model = config["models"].get("responder", "claude-sonnet-4-6")
-    validation_model = config["models"].get("validation", "claude-haiku-4-5-20251001")
     personality = config["personality"]
 
     personality_instructions = ""
@@ -139,7 +132,7 @@ async def run_responder() -> None:
 
     logger.info("Processing %d pending comments", len(all_comments))
 
-    client = get_anthropic_client()
+    server = create_sdk_mcp_server(name=SERVER_NAME, tools=RESPONDER_TOOLS)
 
     for comment in all_comments:
         comment_id = comment["id"]
@@ -161,31 +154,23 @@ async def run_responder() -> None:
         )
 
         try:
-            runner = await client.beta.messages.tool_runner(
+            options = ClaudeAgentOptions(
+                system_prompt=system,
                 model=model,
-                max_tokens=2048,
-                system=system,
-                tools=RESPONDER_TOOLS,
-                messages=[{"role": "user", "content": user_message}],
+                permission_mode="bypassPermissions",
+                mcp_servers={SERVER_NAME: server},
+                allowed_tools=[f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES],
+                max_turns=5,
             )
 
-            async for message in runner:
-                logger.info(
-                    "Responder step for comment %s: stop_reason=%s",
-                    comment_id,
-                    message.stop_reason,
-                )
-                # Validate text outputs for manipulation
-                for block in message.content:
-                    if block.type == "text" and block.text.strip():
-                        is_valid, reason = await validate_agent_output(
-                            user_message, block.text, model=validation_model
-                        )
-                        if not is_valid:
-                            logger.warning(
-                                "Output validation failed for comment %s: %s",
+            async for message in query(prompt=user_message, options=options):
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            logger.debug(
+                                "Responder text for comment %s: %s",
                                 comment_id,
-                                reason,
+                                block.text[:200],
                             )
 
         except Exception:

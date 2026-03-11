@@ -12,9 +12,16 @@ from __future__ import annotations
 import json
 import logging
 
-from anthropic import beta_async_tool
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    TextBlock,
+    create_sdk_mcp_server,
+    query,
+    tool,
+)
 
-from agent.client import get_anthropic_client, load_agent_config
+from agent.client import load_agent_config
 from agent.tools import (
     create_memory,
     create_memory_link,
@@ -50,21 +57,14 @@ are genuinely distinct. Quality over tidiness.\
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-@beta_async_tool
-async def tool_list_memories(
-    category: str | None = None,
-    tag: str | None = None,
-) -> str:
-    """Browse memories by category or tag.
-
-    Args:
-        category: Filter by category (semantic, episodic, procedural).
-        tag: Filter by tag.
-    """
-    result = await list_memories(category=category, tag=tag, limit=50)
+@tool("list_memories", "Browse memories by category (semantic/episodic/procedural) or tag", {"category": str, "tag": str})
+async def tool_list_memories(args):
+    result = await list_memories(
+        category=args.get("category"), tag=args.get("tag"), limit=50,
+    )
     items = result.get("items", [])
     if not items:
-        return "No memories found."
+        return {"content": [{"type": "text", "text": "No memories found."}]}
     lines = []
     for m in items:
         tags = ", ".join(m.get("tags", []))
@@ -73,76 +73,48 @@ async def tool_list_memories(
             f"- ID: {m['id']} [{m['category']}] (tags: {tags}, expires: {expires})\n"
             f"  {m['content'][:400]}"
         )
-    return "\n".join(lines)
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
-@beta_async_tool
-async def tool_create_memory(
-    category: str,
-    content: str,
-    tags: list[str] | None = None,
-) -> str:
-    """Create a new memory (e.g. a merged semantic memory).
-
-    Args:
-        category: Memory category — 'semantic', 'episodic', or 'procedural'.
-        content: The memory content.
-        tags: Optional tags.
-    """
-    result = await create_memory(category=category, content=content, tags=tags or [])
-    return json.dumps({"id": result["id"], "category": result["category"]})
-
-
-@beta_async_tool
-async def tool_update_memory(
-    memory_id: str,
-    content: str | None = None,
-    tags: list[str] | None = None,
-) -> str:
-    """Update an existing memory's content or tags.
-
-    Args:
-        memory_id: The memory UUID.
-        content: New content (optional).
-        tags: New tags (optional).
-    """
-    kwargs: dict = {}
-    if content is not None:
-        kwargs["content"] = content
-    if tags is not None:
-        kwargs["tags"] = tags
-    result = await update_memory(memory_id, **kwargs)
-    return json.dumps({"id": result["id"], "updated": True})
-
-
-@beta_async_tool
-async def tool_delete_memory(memory_id: str) -> str:
-    """Delete a memory that is expired, redundant, or no longer useful.
-
-    Args:
-        memory_id: The memory UUID to delete.
-    """
-    await delete_memory(memory_id)
-    return json.dumps({"deleted": memory_id})
-
-
-@beta_async_tool
-async def tool_link_memories(
-    source_id: str,
-    target_id: str,
-    relationship: str,
-) -> str:
-    """Create a link between two memories.
-
-    Args:
-        source_id: Source memory UUID.
-        target_id: Target memory UUID.
-        relationship: One of 'elaborates', 'contradicts', 'follows_from', 'inspired_by'.
-    """
-    result = await create_memory_link(
-        source_id=source_id, target_id=target_id, relationship=relationship
+@tool("create_memory", "Create a new memory (e.g. a merged semantic memory)", {"category": str, "content": str, "tags": list})
+async def tool_create_memory(args):
+    result = await create_memory(
+        category=args["category"],
+        content=args["content"],
+        tags=args.get("tags", []),
     )
-    return json.dumps({"id": result["id"]})
+    return {"content": [{"type": "text", "text": json.dumps({
+        "id": result["id"], "category": result["category"],
+    })}]}
+
+
+@tool("update_memory", "Update an existing memory's content or tags", {"memory_id": str, "content": str, "tags": list})
+async def tool_update_memory(args):
+    kwargs: dict = {}
+    if "content" in args and args["content"]:
+        kwargs["content"] = args["content"]
+    if "tags" in args and args["tags"]:
+        kwargs["tags"] = args["tags"]
+    result = await update_memory(args["memory_id"], **kwargs)
+    return {"content": [{"type": "text", "text": json.dumps({
+        "id": result["id"], "updated": True,
+    })}]}
+
+
+@tool("delete_memory", "Delete a memory that is expired, redundant, or no longer useful", {"memory_id": str})
+async def tool_delete_memory(args):
+    await delete_memory(args["memory_id"])
+    return {"content": [{"type": "text", "text": json.dumps({"deleted": args["memory_id"]})}]}
+
+
+@tool("link_memories", "Create a link between two memories (elaborates, contradicts, follows_from, inspired_by)", {"source_id": str, "target_id": str, "relationship": str})
+async def tool_link_memories(args):
+    result = await create_memory_link(
+        source_id=args["source_id"],
+        target_id=args["target_id"],
+        relationship=args["relationship"],
+    )
+    return {"content": [{"type": "text", "text": json.dumps({"id": result["id"]})}]}
 
 
 CONSOLIDATOR_TOOLS = [
@@ -151,6 +123,13 @@ CONSOLIDATOR_TOOLS = [
     tool_update_memory,
     tool_delete_memory,
     tool_link_memories,
+]
+
+SERVER_NAME = "plntxt"
+
+TOOL_NAMES = [
+    "list_memories", "create_memory", "update_memory",
+    "delete_memory", "link_memories",
 ]
 
 
@@ -165,28 +144,24 @@ async def run_consolidator() -> None:
     config = await load_agent_config()
     model = config["models"].get("consolidator", "claude-haiku-4-5-20251001")
 
-    client = get_anthropic_client()
-    runner = await client.beta.messages.tool_runner(
+    server = create_sdk_mcp_server(name=SERVER_NAME, tools=CONSOLIDATOR_TOOLS)
+
+    options = ClaudeAgentOptions(
+        system_prompt=SYSTEM_PROMPT,
         model=model,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        tools=CONSOLIDATOR_TOOLS,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Review all memories and perform consolidation. "
-                    "Start by listing memories in each category."
-                ),
-            }
-        ],
+        permission_mode="bypassPermissions",
+        mcp_servers={SERVER_NAME: server},
+        allowed_tools=[f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES],
+        max_turns=30,
     )
 
-    async for message in runner:
-        logger.info(
-            "Consolidator step: stop_reason=%s, content_blocks=%d",
-            message.stop_reason,
-            len(message.content),
-        )
+    async for message in query(
+        prompt="Review all memories and perform consolidation. Start by listing memories in each category.",
+        options=options,
+    ):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    logger.debug("Consolidator text: %s", block.text[:200])
 
     logger.info("Consolidator agent finished")
