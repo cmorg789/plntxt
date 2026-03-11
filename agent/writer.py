@@ -31,6 +31,9 @@ from agent.tools import (
     list_posts,
     list_series as api_list_series,
     search_memories,
+    get_about_page as api_get_about_page,
+    reset_about_page_guard,
+    update_about_page as api_update_about_page,
 )
 
 logger = logging.getLogger("plntxt.agent.writer")
@@ -213,6 +216,20 @@ async def tool_assign_post_to_series(args):
     return {"content": [{"type": "text", "text": json.dumps({"status": "assigned"})}]}
 
 
+@tool("get_about_page", "Read the current about page content. Must be called before update_about_page.", {})
+async def tool_get_about_page(args):
+    content = await api_get_about_page()
+    if not content:
+        return {"content": [{"type": "text", "text": "(about page is empty)"}]}
+    return {"content": [{"type": "text", "text": content}]}
+
+
+@tool("update_about_page", "Update the site's about page with new markdown content. You must call get_about_page first.", {"content": str})
+async def tool_update_about_page(args):
+    result = await api_update_about_page(content=args["content"])
+    return {"content": [{"type": "text", "text": json.dumps({"status": "updated", "key": result.get("key", "about_page")})}]}
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -229,6 +246,8 @@ WRITER_TOOLS = [
     tool_create_memory,
     tool_link_memory_to_post,
     tool_link_memories,
+    tool_get_about_page,
+    tool_update_about_page,
 ]
 
 SERVER_NAME = "plntxt"
@@ -238,12 +257,14 @@ TOOL_NAMES = [
     "search_memories", "list_memories", "create_post",
     "create_series", "assign_post_to_series",
     "create_memory", "link_memory_to_post", "link_memories",
+    "get_about_page", "update_about_page",
 ]
 
 
 async def run_writer() -> None:
     """Execute one run of the writer agent."""
     logger.info("Writer agent starting")
+    reset_about_page_guard()
 
     config = await load_agent_config()
     model = config["models"].get("writer", "claude-sonnet-4-6")

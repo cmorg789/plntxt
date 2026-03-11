@@ -299,3 +299,35 @@ async def propose_moderation_rule(
 async def get_config() -> dict:
     resp = await _request("GET", "/admin/config/json")
     return resp.json()
+
+
+_about_page_read = False
+
+
+def reset_about_page_guard() -> None:
+    """Reset the read-before-write guard. Call at the start of each agent run."""
+    global _about_page_read
+    _about_page_read = False
+
+
+async def get_about_page() -> str:
+    """Read the current about page content."""
+    global _about_page_read
+    resp = await _request("GET", "/admin/config/json")
+    data = resp.json()
+    _about_page_read = True
+    about = data.get("about_page", {})
+    value = about.get("value", {}) if isinstance(about, dict) else {}
+    return value.get("content", "")
+
+
+async def update_about_page(content: str) -> dict:
+    """Update the about page content (markdown). Requires get_about_page() first."""
+    if not _about_page_read:
+        raise RuntimeError("Must call get_about_page() before updating")
+    resp = await _request(
+        "PATCH",
+        "/admin/config/about_page",
+        json={"value": {"content": content}},
+    )
+    return resp.json()
