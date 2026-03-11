@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Email Settings — plntxt{% endblock %}
+
+{% block meta %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="admin-config">
+  <h1>Email Settings</h1>
+
+  <nav class="admin-nav">
+    <a href="/admin/moderation">Moderation Queue</a>
+    <a href="/admin/log">Moderation Log</a>
+    <a href="/admin/rules">Rules</a>
+    <a href="/admin/users">Users</a>
+    <a href="/admin/config">Config</a>
+    <a href="/admin/voice">Voice</a>
+    <a href="/admin/email" class="active">Email</a>
+  </nav>
+
+  {% if message %}
+  <p class="form-success">{{ message }}</p>
+  {% endif %}
+
+  {% if error %}
+  <p class="form-error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="/admin/email" id="email-form">
+    <input type="hidden" name="_csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
+
+    <section class="config-section">
+      <h2>SMTP</h2>
+
+      <div class="config-field">
+        <label for="smtp_host">SMTP host</label>
+        <input id="smtp_host" name="smtp_host" type="text"
+               value="{{ email_config.smtp_host or '' }}"
+               placeholder="smtp.example.com">
+      </div>
+
+      <div class="config-field">
+        <label for="smtp_port">SMTP port</label>
+        <input id="smtp_port" name="smtp_port" type="number" step="1"
+               value="{{ email_config.smtp_port or 587 }}">
+      </div>
+
+      <div class="config-field">
+        <label for="smtp_user">SMTP user</label>
+        <input id="smtp_user" name="smtp_user" type="text"
+               value="{{ email_config.smtp_user or '' }}"
+               placeholder="user@example.com">
+      </div>
+
+      <div class="config-field">
+        <label for="smtp_password">SMTP password</label>
+        <input id="smtp_password" name="smtp_password" type="password"
+               value="{{ email_config.smtp_password or '' }}"
+               placeholder="••••••••">
+      </div>
+
+      <div class="config-field">
+        <label for="smtp_from">From address</label>
+        <input id="smtp_from" name="smtp_from" type="text"
+               value="{{ email_config.smtp_from or '' }}"
+               placeholder="noreply@plntxt.blog">
+      </div>
+
+      <div class="config-field">
+        <label for="use_tls">Use TLS</label>
+        <select id="use_tls" name="use_tls">
+          <option value="true" {% if email_config.use_tls %}selected{% endif %}>Yes</option>
+          <option value="false" {% if not email_config.use_tls %}selected{% endif %}>No</option>
+        </select>
+      </div>
+
+      <div class="config-field">
+        <label for="verification_token_expire_hours">Verification token expiry (hours)</label>
+        <input id="verification_token_expire_hours" name="verification_token_expire_hours"
+               type="number" step="1"
+               value="{{ email_config.verification_token_expire_hours or 48 }}">
+      </div>
+
+      <button type="submit" class="btn">Save</button>
+    </section>
+  </form>
+
+  <section class="config-section">
+    <h2>Test</h2>
+    <div class="config-field">
+      <label for="test_email">Send a test email to</label>
+      <input id="test_email" name="test_email" type="email"
+             placeholder="you@example.com">
+    </div>
+    <button class="btn"
+            hx-post="/admin/email/test"
+            hx-include="#email-form, #test_email"
+            hx-target="#test-result"
+            hx-swap="innerHTML"
+            hx-indicator="#test-spinner">
+      Send test
+    </button>
+    <span id="test-spinner" class="htmx-indicator">sending...</span>
+    <div id="test-result"></div>
+  </section>
+</div>
+{% endblock %}

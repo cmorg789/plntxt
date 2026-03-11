@@ -29,6 +29,7 @@ services:
     volumes:
       - ./app:/code/app
       - ./migrations:/code/migrations
+      - hf-cache:/root/.cache/huggingface
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
@@ -47,6 +48,8 @@ services:
         condition: service_healthy
     volumes:
       - ./agent:/code/agent
+      - hf-cache:/root/.cache/huggingface
 
 volumes:
   postgres-data:
+  hf-cache:

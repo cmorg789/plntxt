@@ -346,7 +346,7 @@ async def config_page(
     configs = {
         c.key: {"value": c.value, "updated_at": c.updated_at.isoformat()}
         for c in result.scalars().all()
-        if c.key != "agent_personality"
+        if c.key not in ("agent_personality", "email")
     }
     csrf_token = request.cookies.get("csrf_token", "")
     return templates.TemplateResponse(
@@ -842,3 +842,109 @@ async def voice_preview(
     return HTMLResponse(
         f'<div class="preview-sample"><p>{text}</p></div>'
     )
+
+
+# ---------------------------------------------------------------------------
+# Email Settings (dedicated page)
+# ---------------------------------------------------------------------------
+
+
+async def _load_email_config(db: AsyncSession) -> dict:
+    result = await db.execute(select(Config).where(Config.key == "email"))
+    config = result.scalar_one_or_none()
+    if config is None:
+        return {}
+    return config.value if isinstance(config.value, dict) else {}
+
+
+@router.get("/email", response_class=HTMLResponse)
+async def email_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    email_config = await _load_email_config(db)
+    return templates.TemplateResponse(
+        "admin/email.html",
+        {"request": request, "email_config": email_config,
+         "message": None, "error": None},
+    )
+
+
+@router.post("/email", response_class=HTMLResponse)
+async def email_save(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_admin_user),
+):
+    form_data = await request.form()
+
+    email_config = {
+        "smtp_host": form_data.get("smtp_host", ""),
+        "smtp_port": int(form_data.get("smtp_port", 587)),
+        "smtp_user": form_data.get("smtp_user", ""),
+        "smtp_password": form_data.get("smtp_password", ""),
+        "smtp_from": form_data.get("smtp_from", ""),
+        "use_tls": form_data.get("use_tls", "true") == "true",
+        "verification_token_expire_hours": int(form_data.get("verification_token_expire_hours", 48)),
+    }
+
+    result = await db.execute(select(Config).where(Config.key == "email"))
+    config = result.scalar_one_or_none()
+    if config is None:
+        config = Config(key="email", value=email_config)
+        db.add(config)
+    else:
+        config.value = email_config
+
+    await db.commit()
+
+    return templates.TemplateResponse(
+        "admin/email.html",
+        {"request": request, "email_config": email_config,
+         "message": "Email settings saved.", "error": None},
+    )
+
+
+@router.post("/email/test", response_class=HTMLResponse)
+async def email_test(
+    request: Request,
+    _user: User = Depends(get_admin_user),
+):
+    form_data = await request.form()
+    to_email = form_data.get("test_email", "").strip()
+
+    if not to_email:
+        return HTMLResponse('<p class="form-error">Enter an email address.</p>')
+
+    smtp_host = form_data.get("smtp_host", "").strip()
+    if not smtp_host:
+        return HTMLResponse('<p class="form-error">SMTP host is not configured. Save settings first.</p>')
+
+    from email.message import EmailMessage
+    import aiosmtplib
+
+    msg = EmailMessage()
+    msg["Subject"] = "Test email from plntxt"
+    msg["From"] = form_data.get("smtp_from", "noreply@plntxt.blog")
+    msg["To"] = to_email
+    msg.set_content("This is a test email from your plntxt installation. If you received this, email is working.")
+
+    smtp_port = int(form_data.get("smtp_port", 587))
+    smtp_user = form_data.get("smtp_user", "").strip()
+    smtp_password = form_data.get("smtp_password", "")
+    use_tls = form_data.get("use_tls", "true") == "true"
+
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=smtp_host,
+            port=smtp_port,
+            username=smtp_user or None,
+            password=smtp_password or None,
+            start_tls=use_tls,
+        )
+    except Exception as e:
+        return HTMLResponse(f'<p class="form-error">Failed: {e}</p>')
+
+    return HTMLResponse(f'<p class="form-success">Test email sent to {to_email}.</p>')
