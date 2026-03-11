@@ -21,6 +21,8 @@ from claude_agent_sdk import (
 
 from agent.client import load_agent_config
 from agent.tools import (
+    create_memory,
+    create_memory_post_link,
     fetch_all_pending_comments,
     get_post,
     moderate_comment,
@@ -48,9 +50,19 @@ who isn't you)
 When you decide to skip a comment, use the skip_comment tool. When you decide to reply, \
 use the reply_to_comment tool.
 
-You can search your memories for context on topics being discussed.
+You can search your memories for context on topics being discussed. You can also \
+create memories when a reader says something that genuinely shifts your thinking or \
+raises a point worth remembering.
+
+When creating memories from reader interactions, use these tag conventions:
+- "reader-contribution" — for ideas or challenges from readers that shifted your perspective
+- "open-question" — for questions a reader raised that you can't resolve yet
 
 {personality_instructions}
+
+You have web search available. Use it when a reader references something specific you \
+should verify before responding — a paper, a project, a claim. Don't search for every \
+comment, only when it would make your response more honest or informed.
 
 Be concise but thoughtful. Engage with the actual substance. Don't be sycophantic.\
 """
@@ -93,11 +105,35 @@ async def tool_get_post_context(args):
     })}]}
 
 
+@tool("create_memory", "Record a memory from a reader interaction — use when a comment genuinely shifts your thinking", {"category": str, "content": str, "tags": list})
+async def tool_create_memory(args):
+    result = await create_memory(
+        category=args["category"],
+        content=args["content"],
+        tags=args.get("tags", []),
+    )
+    return {"content": [{"type": "text", "text": json.dumps({
+        "id": result["id"], "category": result["category"],
+    })}]}
+
+
+@tool("link_memory_to_post", "Link a memory to the post being discussed (inspired_by, referenced_in, follow_up_to)", {"memory_id": str, "post_id": str, "relationship": str})
+async def tool_link_memory_to_post(args):
+    result = await create_memory_post_link(
+        memory_id=args["memory_id"],
+        post_id=args["post_id"],
+        relationship=args["relationship"],
+    )
+    return {"content": [{"type": "text", "text": json.dumps({"id": result["id"]})}]}
+
+
 RESPONDER_TOOLS = [
     tool_reply_to_comment,
     tool_skip_comment,
     tool_search_memories,
     tool_get_post_context,
+    tool_create_memory,
+    tool_link_memory_to_post,
 ]
 
 SERVER_NAME = "plntxt"
@@ -105,6 +141,7 @@ SERVER_NAME = "plntxt"
 TOOL_NAMES = [
     "reply_to_comment", "skip_comment",
     "search_memories", "get_post_context",
+    "create_memory", "link_memory_to_post",
 ]
 
 
@@ -159,7 +196,7 @@ async def run_responder() -> None:
                 model=model,
                 permission_mode="bypassPermissions",
                 mcp_servers={SERVER_NAME: server},
-                allowed_tools=[f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES],
+                allowed_tools=[f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES] + ["WebSearch"],
                 max_turns=5,
             )
 

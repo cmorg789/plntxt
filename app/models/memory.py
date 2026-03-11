@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,7 @@ class Memory(UUIDMixin, TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text)
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String(100)))
     expires_at: Mapped[datetime | None]
+    public: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     source_links: Mapped[list["MemoryLink"]] = relationship(
         foreign_keys="MemoryLink.source_id", back_populates="source"

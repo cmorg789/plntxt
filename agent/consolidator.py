@@ -25,6 +25,7 @@ from agent.client import load_agent_config
 from agent.tools import (
     create_memory,
     create_memory_link,
+    create_memory_post_link,
     delete_memory,
     list_memories,
     update_memory,
@@ -47,6 +48,14 @@ be distilled into semantic memories (general knowledge) if the pattern is clear.
 the episodic memory if it's still uniquely informative.
 4. **Flag contradictions** — If two memories contradict each other, create a link with \
 relationship 'contradicts' so the writer can address it.
+
+When creating or updating memories, preserve these special tags if present:
+- "open-question" — unresolved ideas (keep until genuinely resolved)
+- "influence" — external sources that shaped thinking
+- "reader-contribution" — ideas from readers that shifted perspective
+
+These tags surface in the public knowledge graph. Don't strip them during merges unless \
+the merged memory no longer fits the convention.
 
 Be conservative. Don't delete memories that are still useful. Don't merge things that \
 are genuinely distinct. Quality over tidiness.\
@@ -117,19 +126,30 @@ async def tool_link_memories(args):
     return {"content": [{"type": "text", "text": json.dumps({"id": result["id"]})}]}
 
 
+@tool("link_memory_to_post", "Link a memory to a post (inspired_by, referenced_in, follow_up_to)", {"memory_id": str, "post_id": str, "relationship": str})
+async def tool_link_memory_to_post(args):
+    result = await create_memory_post_link(
+        memory_id=args["memory_id"],
+        post_id=args["post_id"],
+        relationship=args["relationship"],
+    )
+    return {"content": [{"type": "text", "text": json.dumps({"id": result["id"]})}]}
+
+
 CONSOLIDATOR_TOOLS = [
     tool_list_memories,
     tool_create_memory,
     tool_update_memory,
     tool_delete_memory,
     tool_link_memories,
+    tool_link_memory_to_post,
 ]
 
 SERVER_NAME = "plntxt"
 
 TOOL_NAMES = [
     "list_memories", "create_memory", "update_memory",
-    "delete_memory", "link_memories",
+    "delete_memory", "link_memories", "link_memory_to_post",
 ]
 
 

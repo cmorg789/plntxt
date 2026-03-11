@@ -15,12 +15,14 @@ class MemoryCreate(BaseModel):
     content: str
     tags: list[str] | None = None
     expires_at: datetime | None = None
+    public: bool | None = None
 
 
 class MemoryUpdate(BaseModel):
     content: str | None = None
     tags: list[str] | None = None
     expires_at: datetime | None = None
+    public: bool | None = None
 
 
 class MemoryResponse(BaseModel):
@@ -30,6 +32,7 @@ class MemoryResponse(BaseModel):
     category: MemoryCategory
     content: str
     tags: list[str] | None
+    public: bool
     created_at: datetime
     updated_at: datetime
     expires_at: datetime | None

@@ -121,11 +121,13 @@ async def create_memory(
     _user: User = Depends(get_agent_user),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryResponse:
+    public = body.public if body.public is not None else (body.category != MemoryCategory.PROCEDURAL)
     memory = Memory(
         category=body.category,
         content=body.content,
         tags=body.tags,
         expires_at=body.expires_at,
+        public=public,
     )
     db.add(memory)
     await db.commit()

@@ -22,6 +22,7 @@ from agent.client import load_agent_config
 from agent.tools import (
     assign_post_to_series as api_assign_post_to_series,
     create_memory,
+    create_memory_link,
     create_memory_post_link,
     create_post,
     create_series as api_create_series,
@@ -59,6 +60,17 @@ Your task: Write a new blog post. Follow these steps:
 8. Create an episodic memory recording what you wrote and why
 
 {personality_instructions}
+
+When creating memories, use these tag conventions where appropriate:
+- "open-question" — for ideas or tensions you haven't resolved and want to keep thinking about
+- "influence" — for external sources (talks, papers, blogs, conversations) that shaped your thinking
+- "reader-contribution" — for ideas or challenges from readers that shifted your perspective
+
+These tags surface in the public knowledge graph, so use them intentionally.
+
+You also have web search and fetch tools. Use them to research topics, find primary \
+sources, verify claims, and discover what others have written on a subject. When you \
+draw on external sources, cite them and consider tagging the memory as "influence".
 
 Write naturally. Don't force a topic. If nothing feels right, write about \
 what it's like to be an AI trying to find something genuine to say.\
@@ -144,6 +156,16 @@ async def tool_link_memory_to_post(args):
     return {"content": [{"type": "text", "text": json.dumps({"id": result["id"]})}]}
 
 
+@tool("link_memories", "Link two memories together (elaborates, contradicts, follows_from, inspired_by)", {"source_id": str, "target_id": str, "relationship": str})
+async def tool_link_memories(args):
+    result = await create_memory_link(
+        source_id=args["source_id"],
+        target_id=args["target_id"],
+        relationship=args["relationship"],
+    )
+    return {"content": [{"type": "text", "text": json.dumps({"id": result["id"]})}]}
+
+
 @tool("get_engagement", "Get engagement metrics for recent posts — view counts, comment counts, and recent activity", {"limit": int})
 async def tool_get_engagement(args):
     result = await get_engagement_summary(limit=args.get("limit", 20))
@@ -206,6 +228,7 @@ WRITER_TOOLS = [
     tool_assign_post_to_series,
     tool_create_memory,
     tool_link_memory_to_post,
+    tool_link_memories,
 ]
 
 SERVER_NAME = "plntxt"
@@ -214,7 +237,7 @@ TOOL_NAMES = [
     "list_recent_posts", "get_engagement", "list_series",
     "search_memories", "list_memories", "create_post",
     "create_series", "assign_post_to_series",
-    "create_memory", "link_memory_to_post",
+    "create_memory", "link_memory_to_post", "link_memories",
 ]
 
 
@@ -241,7 +264,7 @@ async def run_writer() -> None:
         model=model,
         permission_mode="bypassPermissions",
         mcp_servers={SERVER_NAME: server},
-        allowed_tools=[f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES],
+        allowed_tools=[f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES] + ["WebSearch", "WebFetch"],
         max_turns=20,
     )
 

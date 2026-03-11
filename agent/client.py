@@ -1,8 +1,6 @@
-"""Anthropic client setup and config loading for agents."""
+"""Config loading for agents."""
 
 from __future__ import annotations
-
-from anthropic import AsyncAnthropic
 
 from agent.tools import get_config
 
@@ -12,7 +10,6 @@ DEFAULT_MODELS = {
     "responder": "claude-sonnet-4-6",
     "moderator": "claude-haiku-4-5-20251001",
     "consolidator": "claude-haiku-4-5-20251001",
-    "validation": "claude-haiku-4-5-20251001",
 }
 
 # Default schedule intervals in seconds
@@ -22,11 +19,6 @@ DEFAULT_SCHEDULE = {
     "moderator": 1800,      # 30 minutes
     "consolidator": 604800,  # 7 days
 }
-
-
-def get_anthropic_client() -> AsyncAnthropic:
-    """Create an AsyncAnthropic client. Uses ANTHROPIC_API_KEY env var automatically."""
-    return AsyncAnthropic()
 
 
 async def load_agent_config() -> dict:
