@@ -1,4 +1,21 @@
 services:
+  caddy:
+    build: ./caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
   db:
     image: pgvector/pgvector:pg17
     environment:
@@ -21,8 +38,8 @@ services:
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     env_file:
       - .env
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
@@ -50,6 +67,36 @@ services:
       - ./agent:/code/agent
       - hf-cache:/root/.cache/huggingface
 
+  backup:
+    image: pgvector/pgvector:pg17
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        while true; do
+          stamp=$$(date +%Y%m%d_%H%M%S)
+          echo "[backup] Starting pg_dump at $$stamp"
+          PGPASSWORD=$$POSTGRES_PASSWORD pg_dump -h db -U $$POSTGRES_USER -d $$POSTGRES_DB -Fc \
+            -f /backups/plntxt_$$stamp.db
+          echo "[backup] Done: plntxt_$$stamp.db"
+          # Keep only the 7 most recent backups
+          ls -t /backups/plntxt_*.db 2>/dev/null | tail -n +8 | xargs -r rm
+          sleep 86400
+        done
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-plntxt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plntxt}
+      POSTGRES_DB: ${POSTGRES_DB:-plntxt}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backups:/backups
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   hf-cache:
+  caddy-data:
+  caddy-config:
+  backups:

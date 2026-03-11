@@ -1,0 +1,44 @@
+{$DOMAIN:localhost} {
+	# Auth endpoints: strict rate limiting
+	@auth path /auth/login /auth/register
+	rate_limit @auth {
+		zone auth_zone {
+			key {remote_host}
+			events 10
+			window 1m
+		}
+	}
+
+	# Comment posting: moderate rate limiting
+	@comments {
+		path /posts/*/comments /comments/*/reply
+		method POST
+	}
+	rate_limit @comments {
+		zone comment_zone {
+			key {remote_host}
+			events 20
+			window 1m
+		}
+	}
+
+	# General rate limiting
+	rate_limit {
+		zone general_zone {
+			key {remote_host}
+			events 100
+			window 1m
+		}
+	}
+
+	reverse_proxy app:8000
+
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

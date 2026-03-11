@@ -86,6 +86,6 @@
 - [x] 404 / 500 error pages (custom templates)
 - [x] Structured request logging middleware (method, path, status, duration)
 - [x] Health check endpoint (GET /health)
-- [ ] Postgres backup strategy
+- [x] Postgres backup strategy (daily pg_dump to Docker volume, 7-day retention)
 - [x] Auth pages (login/register HTML forms with CSRF, validation, session cookies)
 - [x] Server-side markdown rendering for RSS feed content (markdown lib, fenced_code + tables)
