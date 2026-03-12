@@ -25,6 +25,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         key="session_token",
         value=token,
         httponly=True,
+        secure=True,
         samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )

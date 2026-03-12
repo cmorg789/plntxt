@@ -60,7 +60,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             value=csrf_cookie,
             httponly=False,
             samesite="strict",
-            secure=False,  # flip to True behind HTTPS in production
+            secure=True,
             path="/",
         )
         return response
