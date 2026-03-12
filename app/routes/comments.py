@@ -46,6 +46,8 @@ def _comment_to_response(comment: Comment) -> CommentResponse:
         body=comment.body,
         status=comment.status,
         response_status=comment.response_status,
+        is_moderated=comment.is_moderated,
+        is_replied=comment.is_replied,
         created_at=comment.created_at,
         author_username=comment.user.username,
         author_avatar=comment.user.avatar_url,
@@ -65,6 +67,8 @@ def _comment_to_tree(comment: Comment) -> CommentTreeResponse:
         body=comment.body,
         status=comment.status,
         response_status=comment.response_status,
+        is_moderated=comment.is_moderated,
+        is_replied=comment.is_replied,
         created_at=comment.created_at,
         author_username=comment.user.username,
         author_avatar=comment.user.avatar_url,
@@ -124,7 +128,7 @@ async def reply_to_comment(
     comment_id: uuid.UUID,
     body: CommentCreate,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_agent_or_admin),
     db: AsyncSession = Depends(get_db),
 ) -> CommentResponse:
     if not user.email_verified and user.role == UserRole.USER:
@@ -148,6 +152,10 @@ async def reply_to_comment(
         ip_address=request.client.host if request.client else None,
     )
     db.add(reply)
+
+    # Mark the parent as replied to
+    parent.is_replied = True
+
     await db.flush()
 
     reply.user = user
@@ -201,8 +209,19 @@ async def update_comment(
 
     old_status = comment.status
     update_data = body.model_dump(exclude_unset=True)
+    reason = update_data.pop("reason", None)
     for field, value in update_data.items():
         setattr(comment, field, value)
+
+    # Auto-set is_moderated when status changes
+    if "status" in update_data:
+        comment.is_moderated = True
+
+    # Auto-set is_replied when response is resolved (replied or skipped)
+    if "response_status" in update_data and update_data["response_status"] in (
+        ResponseStatus.RESPONDED, ResponseStatus.SKIP,
+    ):
+        comment.is_replied = True
 
     # Log moderation action when status changes
     if "status" in update_data and update_data["status"] != old_status:
@@ -214,10 +233,11 @@ async def update_comment(
         else:
             action = ModerationAction.APPROVE
         source = "agent" if user.role == UserRole.AGENT else "admin"
+        default_reason = f"{source.capitalize()} changed status from {old_status.value} to {new_status.value}"
         log_entry = ModerationLog(
             comment_id=comment.id,
             action=action,
-            reason=f"{source.capitalize()} changed status from {old_status.value} to {new_status.value}",
+            reason=reason or default_reason,
         )
         db.add(log_entry)
 
@@ -237,8 +257,47 @@ async def get_pending_comments(
     query = (
         select(Comment)
         .where(
-            Comment.response_status.in_([ResponseStatus.PENDING, ResponseStatus.NEEDS_RESPONSE])
+            Comment.is_moderated.is_(True),
+            Comment.is_replied.is_(False),
+            Comment.author_type == AuthorType.HUMAN,
+            Comment.response_status.in_([ResponseStatus.PENDING, ResponseStatus.NEEDS_RESPONSE]),
         )
+        .options(selectinload(Comment.user))
+        .order_by(Comment.created_at.asc(), Comment.id.asc())
+        .limit(limit + 1)
+    )
+
+    if cursor:
+        cursor_ts, cursor_id = decode_cursor(cursor)
+        query = query.where(
+            (Comment.created_at > cursor_ts)
+            | ((Comment.created_at == cursor_ts) & (Comment.id > cursor_id))
+        )
+
+    result = await db.execute(query)
+    comments = list(result.scalars().all())
+
+    next_cursor = None
+    if len(comments) > limit:
+        comments = comments[:limit]
+        next_cursor = encode_cursor(comments[-1].created_at, comments[-1].id)
+
+    return PendingCommentsResponse(
+        items=[_comment_to_response(c) for c in comments],
+        next_cursor=next_cursor,
+    )
+
+
+@router.get("/comments/unmoderated", response_model=PendingCommentsResponse)
+async def get_unmoderated_comments(
+    cursor: str | None = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100),
+    user: User = Depends(get_agent_user),
+    db: AsyncSession = Depends(get_db),
+) -> PendingCommentsResponse:
+    query = (
+        select(Comment)
+        .where(Comment.is_moderated.is_(False))
         .options(selectinload(Comment.user))
         .order_by(Comment.created_at.asc(), Comment.id.asc())
         .limit(limit + 1)

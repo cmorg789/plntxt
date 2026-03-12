@@ -83,7 +83,10 @@ a project, a claim. Don't search for every comment.\
 
 @tool("reply_to_comment", "Post a reply to a comment", {"comment_id": str, "body": str})
 async def tool_reply_to_comment(args):
+    logger.info("Tool called: reply_to_comment(comment_id=%s, body_len=%d)",
+                args["comment_id"], len(args.get("body", "")))
     result = await reply_to_comment(comment_id=args["comment_id"], body=args["body"])
+    logger.info("Tool reply_to_comment succeeded: %s", result["body"][:200])
     return {"content": [{"type": "text", "text": json.dumps({
         "id": result["id"], "body": result["body"][:200],
     })}]}
@@ -91,6 +94,8 @@ async def tool_reply_to_comment(args):
 
 @tool("skip_comment", "Mark a comment as skipped (no response needed)", {"comment_id": str, "reason": str})
 async def tool_skip_comment(args):
+    logger.info("Tool called: skip_comment(comment_id=%s, reason=%s)",
+                args["comment_id"], args.get("reason"))
     await moderate_comment(comment_id=args["comment_id"], response_status="skip")
     return {"content": [{"type": "text", "text": json.dumps({
         "status": "skipped", "reason": args["reason"],
@@ -118,12 +123,23 @@ async def tool_get_post_context(args):
     })}]}
 
 
-@tool("create_memory", "Record a memory from a reader interaction — use when a comment genuinely shifts your thinking", {"category": str, "content": str, "tags": list})
+@tool("create_memory", "Record a memory from a reader interaction — use when a comment genuinely shifts your thinking", {
+    "type": "object",
+    "properties": {
+        "category": {"type": "string"},
+        "content": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["category", "content"],
+})
 async def tool_create_memory(args):
+    tags = args.get("tags", [])
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(",") if t.strip()]
     result = await create_memory(
         category=args["category"],
         content=args["content"],
-        tags=args.get("tags", []),
+        tags=tags,
     )
     return {"content": [{"type": "text", "text": json.dumps({
         "id": result["id"], "category": result["category"],
@@ -149,7 +165,7 @@ RESPONDER_TOOLS = [
     tool_link_memory_to_post,
 ]
 
-SERVER_NAME = "plntxt"
+SERVER_NAME = "plntxt_responder"
 
 TOOL_NAMES = [
     "reply_to_comment", "skip_comment",

@@ -22,8 +22,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-plntxt}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plntxt}
       POSTGRES_DB: ${POSTGRES_DB:-plntxt}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -35,7 +33,7 @@ services:
   app:
     build: .
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     env_file:
       - .env
     expose:
@@ -44,28 +42,31 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./app:/code/app
-      - ./migrations:/code/migrations
       - hf-cache:/root/.cache/huggingface
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   agent:
     build: .
-    command: python -m agent.cli run-all
+    command: python -m agent.cli run-all --log-level DEBUG
+    user: plntxt
     env_file:
       - .env
+    environment:
+      HF_HOME: /home/plntxt/.cache/huggingface
+      CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "600000"
     depends_on:
       app:
         condition: service_healthy
       db:
         condition: service_healthy
     volumes:
-      - ./agent:/code/agent
-      - hf-cache:/root/.cache/huggingface
+      - hf-cache:/home/plntxt/.cache/huggingface
+    restart: unless-stopped
 
   backup:
     image: pgvector/pgvector:pg17

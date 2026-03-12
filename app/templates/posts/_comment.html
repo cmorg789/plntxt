@@ -9,6 +9,9 @@
         </time>
         {% if current_user and current_user.role.value == 'admin' %}
         <span class="comment-status status-{{ comment.status.value }}">{{ comment.status.value }}</span>
+        {% if comment.response_status.value == 'skip' %}
+        <span class="comment-status status-skipped">skipped</span>
+        {% endif %}
         {% endif %}
     </div>
     <div class="comment-body markdown-content">{{ comment.body }}</div>
@@ -41,6 +44,11 @@
                     hx-target="#comment-{{ comment.id }}"
                     hx-swap="outerHTML"
                     hx-confirm="Approve this comment?">approve</button>
+            <button class="mod-btn mod-approve"
+                    hx-post="/admin/comments/{{ comment.id }}/restore?source=inline"
+                    hx-target="#comment-{{ comment.id }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Restore and queue for response?">restore</button>
             {% endif %}
             {% if comment.status.value != 'flagged' %}
             <button class="mod-btn mod-flag"

@@ -28,6 +28,7 @@
         <th>Comment</th>
         <th>Reason</th>
         <th>Date</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -43,6 +44,17 @@
         </td>
         <td>{{ entry.reason or '' }}</td>
         <td class="nowrap">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="actions">
+          {% if entry.comment and entry.comment.status.value != 'visible' %}
+          <button
+            hx-post="/admin/comments/{{ entry.comment.id }}/restore"
+            hx-target="closest tr"
+            hx-swap="outerHTML"
+            hx-confirm="Restore this comment and queue for response?"
+            class="btn btn-approve btn-small"
+          >Restore</button>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

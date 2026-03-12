@@ -37,6 +37,8 @@ class Comment(UUIDMixin, TimestampMixin, Base):
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[CommentStatus] = mapped_column(default=CommentStatus.VISIBLE)
     response_status: Mapped[ResponseStatus] = mapped_column(default=ResponseStatus.PENDING)
+    is_moderated: Mapped[bool] = mapped_column(default=False)
+    is_replied: Mapped[bool] = mapped_column(default=False)
     ip_address: Mapped[str | None] = mapped_column(String(45))
 
     post: Mapped["Post"] = relationship(back_populates="comments")  # noqa: F821

@@ -44,7 +44,7 @@ async def list_memories(
     _user: User = Depends(get_agent_user),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryListResponse:
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     stmt = select(Memory).where(
         or_(Memory.expires_at.is_(None), Memory.expires_at > now)
     )

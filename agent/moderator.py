@@ -22,7 +22,7 @@ from claude_agent_sdk import (
 
 from agent.client import load_agent_config
 from agent.tools import (
-    fetch_all_pending_comments,
+    fetch_all_unmoderated_comments,
     fetch_moderation_rules,
     moderate_comment,
     propose_moderation_rule,
@@ -159,6 +159,7 @@ async def tool_moderate_comment(args):
         comment_id=comment_id,
         status=status,
         response_status=response_status,
+        reason=reason,
     )
     logger.info("Moderated comment %s: status=%s response=%s reason=%s",
                 comment_id, status, response_status, reason)
@@ -187,7 +188,7 @@ MODERATOR_TOOLS = [
     tool_propose_rule,
 ]
 
-SERVER_NAME = "plntxt"
+SERVER_NAME = "plntxt_moderator"
 
 TOOL_NAMES = [
     "moderate_comment", "propose_rule",
@@ -214,10 +215,10 @@ async def run_moderator() -> None:
         logger.warning("Failed to fetch moderation rules, continuing with hardcoded patterns only")
         rules = []
 
-    all_comments = await fetch_all_pending_comments()
+    all_comments = await fetch_all_unmoderated_comments()
 
     if not all_comments:
-        logger.info("No pending comments to moderate")
+        logger.info("No unmoderated comments to process")
         return
 
     logger.info("Moderating %d comments", len(all_comments))
@@ -238,7 +239,8 @@ async def run_moderator() -> None:
             if action == "auto_hide":
                 logger.info("Pattern filter auto-hiding comment %s: %s", comment_id, reason)
                 await moderate_comment(
-                    comment_id=comment_id, status="hidden", response_status="skip"
+                    comment_id=comment_id, status="hidden", response_status="skip",
+                    reason=f"Pattern filter: {reason}",
                 )
                 pattern_stats["hidden"] += 1
                 continue
@@ -246,7 +248,8 @@ async def run_moderator() -> None:
             if action == "flag":
                 logger.info("Pattern filter flagging comment %s: %s", comment_id, reason)
                 await moderate_comment(
-                    comment_id=comment_id, status="flagged", response_status="pending"
+                    comment_id=comment_id, status="flagged", response_status="pending",
+                    reason=f"Pattern filter: {reason}",
                 )
                 pattern_stats["flagged"] += 1
                 continue

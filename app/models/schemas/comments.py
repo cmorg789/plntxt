@@ -15,6 +15,9 @@ class CommentCreate(BaseModel):
 class CommentUpdate(BaseModel):
     status: CommentStatus | None = None
     response_status: ResponseStatus | None = None
+    is_moderated: bool | None = None
+    is_replied: bool | None = None
+    reason: str | None = None
 
 
 class CommentResponse(BaseModel):
@@ -28,6 +31,8 @@ class CommentResponse(BaseModel):
     body: str
     status: CommentStatus
     response_status: ResponseStatus
+    is_moderated: bool
+    is_replied: bool
     created_at: datetime
     author_username: str
     author_avatar: str | None

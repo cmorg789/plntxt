@@ -127,12 +127,15 @@ async def moderate_comment(
     comment_id: str,
     status: str | None = None,
     response_status: str | None = None,
+    reason: str | None = None,
 ) -> dict:
     payload: dict = {}
     if status is not None:
         payload["status"] = status
     if response_status is not None:
         payload["response_status"] = response_status
+    if reason is not None:
+        payload["reason"] = reason
     resp = await _request("PATCH", f"/api/comments/{comment_id}", json=payload)
     return resp.json()
 
@@ -143,6 +146,31 @@ async def fetch_all_pending_comments(page_limit: int = 20) -> list[dict]:
     cursor = None
     while True:
         result = await get_pending_comments(cursor=cursor, limit=page_limit)
+        items = result.get("items", [])
+        all_comments.extend(items)
+        cursor = result.get("next_cursor")
+        if not cursor or not items:
+            break
+    return all_comments
+
+
+async def get_unmoderated_comments(
+    cursor: str | None = None,
+    limit: int = 20,
+) -> dict:
+    params: dict = {"limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+    resp = await _request("GET", "/api/comments/unmoderated", params=params)
+    return resp.json()
+
+
+async def fetch_all_unmoderated_comments(page_limit: int = 20) -> list[dict]:
+    """Paginate through all unmoderated comments and return them as a flat list."""
+    all_comments: list[dict] = []
+    cursor = None
+    while True:
+        result = await get_unmoderated_comments(cursor=cursor, limit=page_limit)
         items = result.get("items", [])
         all_comments.extend(items)
         cursor = result.get("next_cursor")

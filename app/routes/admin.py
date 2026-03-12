@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.responses import RedirectResponse
 
-from app.auth.dependencies import get_admin_user
+from app.auth.dependencies import get_admin_user, get_agent_or_admin
 from app.auth.passwords import hash_password
 from app.db import get_db
 from app.models.comment import Comment, CommentStatus, ResponseStatus
@@ -308,6 +308,65 @@ async def flag_comment(
     return HTMLResponse(_render_comment_row(comment))
 
 
+@router.post("/comments/{comment_id}/restore", response_class=HTMLResponse)
+async def restore_comment(
+    comment_id: UUID,
+    request: Request,
+    source: str = Query("table"),
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user),
+):
+    result = await db.execute(
+        select(Comment)
+        .where(Comment.id == comment_id)
+        .options(selectinload(Comment.user), selectinload(Comment.post))
+    )
+    comment = result.scalar_one_or_none()
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    old_status = comment.status
+    comment.status = CommentStatus.VISIBLE
+    comment.is_moderated = True
+    comment.is_replied = False
+    comment.response_status = ResponseStatus.NEEDS_RESPONSE
+
+    log_entry = ModerationLog(
+        comment_id=comment.id,
+        action=ModerationAction.APPROVE,
+        reason=f"Admin restored from {old_status.value} — queued for response",
+    )
+    db.add(log_entry)
+    await db.commit()
+
+    result = await db.execute(
+        select(Comment)
+        .where(Comment.id == comment_id)
+        .options(
+            selectinload(Comment.user),
+            selectinload(Comment.post),
+            selectinload(Comment.replies).selectinload(Comment.user),
+        )
+    )
+    comment = result.scalar_one()
+
+    if source == "inline":
+        return _render_inline_comment(request, comment, admin_user)
+    return _render_log_row_restored(comment)
+
+
+def _render_log_row_restored(comment: Comment) -> str:
+    body = comment.body[:120]
+    if len(comment.body) > 120:
+        body += "..."
+    return f"""<tr>
+  <td><span class="status-badge status-approve">approve</span></td>
+  <td class="comment-body">{body}</td>
+  <td>Admin restored — queued for response</td>
+  <td class="nowrap">{comment.updated_at.strftime('%Y-%m-%d %H:%M') if hasattr(comment, 'updated_at') and comment.updated_at else ''}</td>
+</tr>"""
+
+
 @router.post("/comments/{comment_id}/delete", response_class=HTMLResponse)
 async def delete_comment(
     comment_id: UUID,
@@ -402,7 +461,7 @@ async def config_edit_form(
 @router.get("/config/json")
 async def list_config_json(
     db: AsyncSession = Depends(get_db),
-    admin_user: User = Depends(get_admin_user),
+    user: User = Depends(get_agent_or_admin),
 ):
     result = await db.execute(select(Config))
     configs = result.scalars().all()

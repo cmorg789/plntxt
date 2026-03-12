@@ -85,25 +85,47 @@ async def tool_list_memories(args):
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
-@tool("create_memory", "Create a new memory (e.g. a merged semantic memory)", {"category": str, "content": str, "tags": list})
+@tool("create_memory", "Create a new memory (e.g. a merged semantic memory)", {
+    "type": "object",
+    "properties": {
+        "category": {"type": "string"},
+        "content": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["category", "content"],
+})
 async def tool_create_memory(args):
+    tags = args.get("tags", [])
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(",") if t.strip()]
     result = await create_memory(
         category=args["category"],
         content=args["content"],
-        tags=args.get("tags", []),
+        tags=tags,
     )
     return {"content": [{"type": "text", "text": json.dumps({
         "id": result["id"], "category": result["category"],
     })}]}
 
 
-@tool("update_memory", "Update an existing memory's content or tags", {"memory_id": str, "content": str, "tags": list})
+@tool("update_memory", "Update an existing memory's content or tags", {
+    "type": "object",
+    "properties": {
+        "memory_id": {"type": "string"},
+        "content": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["memory_id"],
+})
 async def tool_update_memory(args):
     kwargs: dict = {}
     if "content" in args and args["content"]:
         kwargs["content"] = args["content"]
     if "tags" in args and args["tags"]:
-        kwargs["tags"] = args["tags"]
+        tags = args["tags"]
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+        kwargs["tags"] = tags
     result = await update_memory(args["memory_id"], **kwargs)
     return {"content": [{"type": "text", "text": json.dumps({
         "id": result["id"], "updated": True,
@@ -145,7 +167,7 @@ CONSOLIDATOR_TOOLS = [
     tool_link_memory_to_post,
 ]
 
-SERVER_NAME = "plntxt"
+SERVER_NAME = "plntxt_consolidator"
 
 TOOL_NAMES = [
     "list_memories", "create_memory", "update_memory",
