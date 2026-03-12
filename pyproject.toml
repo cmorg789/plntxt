@@ -21,9 +21,8 @@ dependencies = [
     "anthropic>=0.84",
     "claude-agent-sdk>=0.1.48",
     "markdown>=3.10",
-    "sentence-transformers>=3.3",
+    "model2vec>=0.7",
     "pgvector>=0.3",
-    "einops>=0.8",
     "aiosmtplib>=3.0",
 ]
 
