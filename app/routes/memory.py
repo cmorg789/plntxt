@@ -1,14 +1,15 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_agent_user
 from app.db import get_db
 from app.models.memory import Memory, MemoryCategory, MemoryLink, MemoryPostLink
-from app.services.embeddings import embed_query, embed_text
+from app.services.embeddings import embed_query
+from app.services.embedding_tasks import generate_memory_embedding
 from app.pagination import decode_cursor, encode_cursor
 from app.models.post import Post
 from app.models.schemas.memory import (
@@ -119,22 +120,22 @@ async def get_memory(
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_memory(
     body: MemoryCreate,
+    background_tasks: BackgroundTasks,
     _user: User = Depends(get_agent_user),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryResponse:
     public = body.public if body.public is not None else (body.category != MemoryCategory.PROCEDURAL)
-    embedding = embed_text(body.content)
     memory = Memory(
         category=body.category,
         content=body.content,
         tags=body.tags,
         expires_at=body.expires_at,
         public=public,
-        embedding=embedding,
     )
     db.add(memory)
     await db.commit()
     await db.refresh(memory)
+    background_tasks.add_task(generate_memory_embedding, memory.id)
     return MemoryResponse.model_validate(memory)
 
 
@@ -142,6 +143,7 @@ async def create_memory(
 async def update_memory(
     memory_id: uuid.UUID,
     body: MemoryUpdate,
+    background_tasks: BackgroundTasks,
     _user: User = Depends(get_agent_user),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryResponse:
@@ -154,11 +156,12 @@ async def update_memory(
     for field, value in update_data.items():
         setattr(memory, field, value)
 
-    if "content" in update_data:
-        memory.embedding = embed_text(memory.content)
-
     await db.commit()
     await db.refresh(memory)
+
+    if "content" in update_data:
+        background_tasks.add_task(generate_memory_embedding, memory.id)
+
     return MemoryResponse.model_validate(memory)
 
 

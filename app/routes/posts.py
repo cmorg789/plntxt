@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from slugify import slugify
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_admin_user, get_agent_or_admin, get_optional_user
 from app.db import get_db
-from app.services.embeddings import embed_query, embed_text
+from app.services.embeddings import embed_query
+from app.services.embedding_tasks import generate_post_embedding
 from app.models.comment import Comment, CommentStatus
 from app.models.post import Post, PostStatus
 from app.models.revision import PostRevision
@@ -186,6 +187,7 @@ async def get_post(
 @router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
 async def create_post(
     data: PostCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_agent_or_admin),
 ):
@@ -198,7 +200,6 @@ async def create_post(
 
     published_at = datetime.utcnow() if data.status == PostStatus.PUBLISHED else None
 
-    embedding = embed_text(data.body)
     post = Post(
         title=data.title,
         slug=slug,
@@ -206,11 +207,11 @@ async def create_post(
         tags=data.tags,
         status=data.status,
         published_at=published_at,
-        embedding=embedding,
     )
     db.add(post)
     await db.commit()
     await db.refresh(post)
+    background_tasks.add_task(generate_post_embedding, post.id)
     return PostResponse.model_validate(post)
 
 
@@ -218,6 +219,7 @@ async def create_post(
 async def update_post(
     slug: str,
     data: PostUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_agent_or_admin),
 ):
@@ -243,15 +245,16 @@ async def update_post(
     for field, value in update_data.items():
         setattr(post, field, value)
 
-    if "body" in update_data:
-        post.embedding = embed_text(post.body)
-
     # Set published_at when transitioning to PUBLISHED for the first time
     if post.status == PostStatus.PUBLISHED and post.published_at is None:
         post.published_at = datetime.utcnow()
 
     await db.commit()
     await db.refresh(post)
+
+    if "body" in update_data:
+        background_tasks.add_task(generate_post_embedding, post.id)
+
     return PostResponse.model_validate(post)
 
 
