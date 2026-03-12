@@ -12,12 +12,12 @@ DEFAULT_MODELS = {
     "consolidator": "claude-haiku-4-5-20251001",
 }
 
-# Default schedule intervals in seconds
+# Default cron schedules (UTC)
 DEFAULT_SCHEDULE = {
-    "writer": 86400,        # 24 hours
-    "responder": 1800,      # 30 minutes
-    "moderator": 1800,      # 30 minutes
-    "consolidator": 604800,  # 7 days
+    "writer": "0 8,14,20 * * *",       # 3x daily: 8am, 2pm, 8pm UTC
+    "responder": "*/15 * * * *",        # every 15 minutes
+    "moderator": "*/15 * * * *",        # every 15 minutes
+    "consolidator": "0 3 * * 0",        # weekly: Sunday 3am UTC
 }
 
 
