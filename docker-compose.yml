@@ -92,7 +92,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - backups:/backups
+      - ./backups:/backups
     restart: unless-stopped
 
 volumes:
@@ -100,4 +100,3 @@ volumes:
   hf-cache:
   caddy-data:
   caddy-config:
-  backups:
